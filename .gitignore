@@ -1,0 +1,12 @@
+.venv/
+
+__pycache__/
+*.py[cod]
+
+output/
+
+TRNS_DOWNLOAD_*.xls
+TRNS_RESULT_DETAIL_*.xls
+
+zNex~$*
+~$*.xls

@@ -1,0 +1,301 @@
+{
+  "problem_type": "three_tier_network_design_with_designated_warehouses",
+  "objective_sense": "min",
+  "sets": [
+    {
+      "name": "plants",
+      "symbol": "P",
+      "description": "공급 거점 plant 집합",
+      "source": "plant sheet"
+    },
+    {
+      "name": "designated_warehouses",
+      "symbol": "W_fix",
+      "description": "외생적으로 지정되어 반드시 사용되는 warehouse 집합",
+      "source": "forced_open_warehouses input intersected with active warehouse rows"
+    },
+    {
+      "name": "customers",
+      "symbol": "C",
+      "description": "수요 고객 집합",
+      "source": "customer sheet"
+    },
+    {
+      "name": "plant_warehouse_arcs",
+      "symbol": "A_pw_fix",
+      "description": "지정된 warehouse 집합에 대해서만 남는 plant→warehouse 아크 집합",
+      "source": "plantWarehouseCost filtered by Warehouse ID in W_fix"
+    },
+    {
+      "name": "warehouse_customer_arcs",
+      "symbol": "A_wc_fix",
+      "description": "지정된 warehouse 집합에 대해서만 남는 warehouse→customer 아크 집합",
+      "source": "warehouseCustomerCost filtered by Warehouse ID in W_fix"
+    }
+  ],
+  "parameters": [
+    {
+      "name": "plant_supply",
+      "symbol": "s[p]",
+      "index": ["plant"],
+      "description": "각 plant의 최대 공급 가능 물량",
+      "source": "plant.Product Qty",
+      "unit": "qty"
+    },
+    {
+      "name": "customer_demand",
+      "symbol": "d[c]",
+      "index": ["customer"],
+      "description": "각 customer의 수요 물량",
+      "source": "customer.Do Qty",
+      "unit": "qty"
+    },
+    {
+      "name": "warehouse_capacity",
+      "symbol": "cap[w]",
+      "index": ["designated_warehouse"],
+      "description": "각 지정 warehouse의 처리 가능 용량",
+      "source": "warehouse.Capacity Qty",
+      "unit": "qty"
+    },
+    {
+      "name": "warehouse_fixed_cost",
+      "symbol": "fc[w]",
+      "index": ["designated_warehouse"],
+      "description": "지정 warehouse의 고정비",
+      "source": "warehouse.Fixed Cost",
+      "unit": "cost"
+    },
+    {
+      "name": "warehouse_operation_cost",
+      "symbol": "oc[w]",
+      "index": ["designated_warehouse"],
+      "description": "지정 warehouse 처리 물량 단위당 운영비",
+      "source": "warehouse.Operation Cost",
+      "unit": "cost/qty (same abstract cost basis as transport cost)"
+    },
+    {
+      "name": "plant_warehouse_transport_cost",
+      "symbol": "cpw[p,w]",
+      "index": ["plant", "designated_warehouse"],
+      "description": "plant에서 지정 warehouse로의 물량 단위당 운송비",
+      "source": "plantWarehouseCost.Trns Cost",
+      "unit": "cost/qty (same abstract cost basis as operation cost)"
+    },
+    {
+      "name": "warehouse_customer_transport_cost",
+      "symbol": "cwc[w,c]",
+      "index": ["designated_warehouse", "customer"],
+      "description": "지정 warehouse에서 customer로의 수요 단위당 운송비",
+      "source": "warehouseCustomerCost.Trns Cost",
+      "unit": "cost/qty (same abstract cost basis as operation cost)"
+    },
+    {
+      "name": "customer_mapping_id",
+      "symbol": "map[c]",
+      "index": ["customer"],
+      "description": "customer가 특정 warehouse에서만 서비스되어야 함을 나타내는 식별자; 주어지면 해당 warehouse를 강제 오픈하고 배정을 제한하는 비즈니스 규칙으로 해석된다.",
+      "source": "customer.Mapping ID",
+      "unit": "identifier"
+    },
+    {
+      "name": "required_warehouse_count",
+      "symbol": "K",
+      "index": [],
+      "description": "지정 warehouse 집합의 기대 크기",
+      "source": "simulation.Warehouse Qty",
+      "unit": "count"
+    }
+  ],
+  "decision_variables": [
+    {
+      "name": "open_warehouse_fixed",
+      "symbol": "y[w]",
+      "type": "binary",
+      "index": ["designated_warehouse"],
+      "description": "코드상 생성되지만 모든 지정 warehouse에 대해 1로 고정된다.",
+      "source_locations": ["src/network3tier/optimizer.py:59", "src/network3tier/optimizer.py:97-98"]
+    },
+    {
+      "name": "assign_customer",
+      "symbol": "x[w,c]",
+      "type": "binary",
+      "index": ["designated_warehouse", "customer"],
+      "description": "customer c를 지정 warehouse w에 배정하면 1; 정의역은 A_wc_fix에 한정",
+      "source_locations": ["src/network3tier/optimizer.py:60"]
+    },
+    {
+      "name": "plant_to_warehouse_flow",
+      "symbol": "f[p,w]",
+      "type": "integer",
+      "index": ["plant", "designated_warehouse"],
+      "description": "plant p에서 지정 warehouse w로 보내는 정수 물량; 정의역은 A_pw_fix에 한정되며 의미상 0 ~ min(plant 공급량, warehouse capacity) 범위에서 split 가능",
+      "source_locations": ["src/network3tier/optimizer.py:61"]
+    }
+  ],
+  "constraints": [
+    {
+      "id": "designated_customer_single_sourcing",
+      "family": "assignment",
+      "description": "각 customer는 지정된 warehouse들 중 허용된 하나에만 배정되어야 한다.",
+      "expression_summary": "for each c in C: sum_{w:(w,c) in A_wc_fix} x[w,c] = 1",
+      "related_variables": ["assign_customer"],
+      "related_parameters": [],
+      "source_locations": ["src/network3tier/optimizer.py:63-67"]
+    },
+    {
+      "id": "designated_warehouse_capacity",
+      "family": "capacity",
+      "description": "각 지정 warehouse의 배정 총수요는 capacity를 초과할 수 없다. y[w]는 1로 고정되므로 실질적으로 capacity 제약이다.",
+      "expression_summary": "for each w in W_fix: sum_{c:(w,c) in A_wc_fix} d[c] * x[w,c] <= cap[w]",
+      "related_variables": ["assign_customer", "open_warehouse_fixed"],
+      "related_parameters": ["customer_demand", "warehouse_capacity"],
+      "source_locations": ["src/network3tier/optimizer.py:71-77", "src/network3tier/optimizer.py:97-98"]
+    },
+    {
+      "id": "designated_warehouse_must_serve_customer",
+      "family": "activation",
+      "description": "지정된 모든 warehouse는 최소 1개 customer를 가져야 한다. y[w] = 1 이므로 비어 있는 지정 warehouse는 허용되지 않는다.",
+      "expression_summary": "for each w in W_fix: sum_{c:(w,c) in A_wc_fix} x[w,c] >= 1",
+      "related_variables": ["assign_customer", "open_warehouse_fixed"],
+      "related_parameters": [],
+      "source_locations": ["src/network3tier/optimizer.py:73-78", "src/network3tier/optimizer.py:97-98"]
+    },
+    {
+      "id": "designated_warehouse_flow_balance",
+      "family": "flow_balance",
+      "description": "각 지정 warehouse의 plant 유입량은 배정된 customer 수요 총합과 같아야 한다.",
+      "expression_summary": "for each w in W_fix: sum_{p:(p,w) in A_pw_fix} f[p,w] = sum_{c:(w,c) in A_wc_fix} d[c] * x[w,c]",
+      "related_variables": ["plant_to_warehouse_flow", "assign_customer"],
+      "related_parameters": ["customer_demand"],
+      "source_locations": ["src/network3tier/optimizer.py:80-84"]
+    },
+    {
+      "id": "designated_plant_supply_limit",
+      "family": "supply",
+      "description": "각 plant의 총 출하량은 공급 가능 물량을 넘을 수 없다.",
+      "expression_summary": "for each p in P: sum_{w:(p,w) in A_pw_fix} f[p,w] <= s[p]",
+      "related_variables": ["plant_to_warehouse_flow"],
+      "related_parameters": ["plant_supply"],
+      "source_locations": ["src/network3tier/optimizer.py:86-88"]
+    },
+    {
+      "id": "designated_warehouse_count_consistency",
+      "family": "consistency",
+      "description": "입력된 지정 warehouse 집합의 크기는 simulation의 required warehouse count와 같아야 한다.",
+      "expression_summary": "|W_fix| = K",
+      "related_variables": [],
+      "related_parameters": ["required_warehouse_count"],
+      "source_locations": ["src/network3tier/optimizer.py:92-96"]
+    },
+    {
+      "id": "designated_open_fixing",
+      "family": "fixing",
+      "description": "지정된 모든 warehouse는 반드시 open 상태로 고정된다.",
+      "expression_summary": "for each w in W_fix: y[w] = 1",
+      "related_variables": ["open_warehouse_fixed"],
+      "related_parameters": [],
+      "source_locations": ["src/network3tier/optimizer.py:97-98"]
+    }
+  ],
+  "objective": {
+    "terms": [
+      {
+        "name": "designated_warehouse_fixed_cost_term",
+        "expression_summary": "sum_{w in W_fix} fc[w]",
+        "coefficient_source": "warehouse.Fixed Cost with y[w] fixed to 1",
+        "related_variables": ["open_warehouse_fixed"],
+        "related_parameters": ["warehouse_fixed_cost"]
+      },
+      {
+        "name": "designated_warehouse_customer_transport_cost_term",
+        "expression_summary": "sum_{(w,c) in A_wc_fix} d[c] * cwc[w,c] * x[w,c]",
+        "coefficient_source": "warehouseCustomerCost.Trns Cost weighted by customer.Do Qty",
+        "related_variables": ["assign_customer"],
+        "related_parameters": ["customer_demand", "warehouse_customer_transport_cost"]
+      },
+      {
+        "name": "designated_warehouse_operation_cost_term",
+        "expression_summary": "sum_{(w,c) in A_wc_fix} d[c] * oc[w] * x[w,c]",
+        "coefficient_source": "warehouse.Operation Cost weighted by customer.Do Qty",
+        "related_variables": ["assign_customer"],
+        "related_parameters": ["customer_demand", "warehouse_operation_cost"]
+      },
+      {
+        "name": "designated_plant_warehouse_transport_cost_term",
+        "expression_summary": "sum_{(p,w) in A_pw_fix} cpw[p,w] * f[p,w]",
+        "coefficient_source": "plantWarehouseCost.Trns Cost",
+        "related_variables": ["plant_to_warehouse_flow"],
+        "related_parameters": ["plant_warehouse_transport_cost"]
+      }
+    ]
+  },
+  "data_mapping": [
+    {
+      "source_name": "forced_open_warehouses",
+      "mapped_to": "set W_fix"
+    },
+    {
+      "source_name": "warehouse.Active Y/N",
+      "mapped_to": "prerequisite filter before W_fix can be formed"
+    },
+    {
+      "source_name": "plantWarehouseCost filtered by Warehouse ID in W_fix",
+      "mapped_to": "A_pw_fix and f[p,w] domain"
+    },
+    {
+      "source_name": "warehouseCustomerCost filtered by Warehouse ID in W_fix",
+      "mapped_to": "A_wc_fix and x[w,c] domain"
+    },
+    {
+      "source_name": "simulation.Warehouse Qty",
+      "mapped_to": "consistency check for |W_fix|"
+    },
+    {
+      "source_name": "plant.Product Qty",
+      "mapped_to": "plant_supply s[p]"
+    },
+    {
+      "source_name": "customer.Do Qty",
+      "mapped_to": "customer_demand d[c] and assignment-weighted objective coefficients"
+    },
+    {
+      "source_name": "customer.Mapping ID",
+      "mapped_to": "customer_mapping_id map[c] and user-provided mapping restriction semantics"
+    },
+    {
+      "source_name": "warehouse.Capacity Qty",
+      "mapped_to": "warehouse_capacity cap[w]"
+    },
+    {
+      "source_name": "warehouse.Fixed Cost",
+      "mapped_to": "warehouse_fixed_cost fc[w]"
+    },
+    {
+      "source_name": "warehouse.Operation Cost",
+      "mapped_to": "warehouse_operation_cost oc[w]"
+    },
+    {
+      "source_name": "plantWarehouseCost.Trns Cost",
+      "mapped_to": "plant_warehouse_transport_cost cpw[p,w]"
+    },
+    {
+      "source_name": "warehouseCustomerCost.Trns Cost",
+      "mapped_to": "warehouse_customer_transport_cost cwc[w,c]"
+    }
+  ],
+  "assumptions": [
+    "designated model은 best_model과 같은 기본 제약/비용 구조를 공유하되, warehouse 집합이 외생적으로 주어진다.",
+    "forced_open_warehouses에 없는 warehouse는 모델에서 완전히 제외되며, 단순히 y[w]=0으로 두는 방식이 아니다.",
+    "지정된 warehouse는 모두 반드시 customer를 하나 이상 가져야 하므로, 불필요하게 비어 있는 지정 warehouse는 허용되지 않는다.",
+    "Operation Cost와 Trns Cost는 1:1로 비교 가능한 동일 cost basis를 공유하지만, 절대 단위명은 따로 정의하지 않는다.",
+    "Plant가 여러 개인 경우 plant->warehouse 물량은 비용 최소화를 위해 여러 plant에서 정수 단위로 자유롭게 split될 수 있다.",
+    "Shipment Qty는 정수 값으로 해석된다.",
+    "Structure, Status, Distance Type은 현재 프로젝트의 최적화 모델과 후처리에서 사용되지 않는다.",
+    "customer.Mapping ID는 비즈니스 규칙상 customer를 특정 warehouse에 고정하고 해당 warehouse를 반드시 오픈시키는 장치로 해석되지만, 현재 코드에는 명시적으로 반영되어 있지 않다.",
+    "지정 집합에 대해 customer를 커버할 수 없는 경우 모델은 infeasible이 된다."
+  ],
+  "unknowns": [
+    "샘플링된 designated set이 best solution의 1-swap 이웃이라는 사실은 실행 워크플로우 특성이지 수리모형 자체의 필수 구성요소는 아니다."
+  ]
+}
