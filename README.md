@@ -22,6 +22,8 @@ Plant-Warehouse-Customer 3단 물류 네트워크에서 어떤 창고 후보를 
 - `simulation.Warehouse Qty` 만큼의 warehouse를 정확히 사용한다.
 - 사용된 warehouse는 최소 1개 이상의 customer를 반드시 배정받는다.
 - Plant -> Warehouse 물량은 정수 단위로 여러 plant에 자유롭게 분할될 수 있다.
+- Plant -> Warehouse 변수는 의미상 `0 ~ min(plant Product Qty, warehouse Capacity Qty)` 범위의 정수다.
+- Warehouse 후보는 `warehouse.Active Y/N = Y` 인 행만 사용한다.
 
 ## 비용 구조
 
@@ -36,8 +38,9 @@ Plant-Warehouse-Customer 3단 물류 네트워크에서 어떤 창고 후보를 
 
 - 비용 목적식은 `Do Qty`만 사용한다.
 - `Operation Cost`와 `Trns Cost`는 1:1로 비교 가능한 동일 cost basis를 사용한다.
-- `Shipment Qty`는 비용 목적식에 사용하지 않고 `leadtime` 계산에만 사용한다.
+- `Shipment Qty`는 정수값이며 비용 목적식에 사용하지 않고 `leadtime` 계산에만 사용한다.
 - Plant 공급한도는 `Product Qty`를 사용한다.
+- `Structure`, `Status`, `Distance Type`은 현재 프로젝트에서 사용하지 않는다.
 
 ## Leadtime / Coverage 계산
 
@@ -61,6 +64,30 @@ Plant-Warehouse-Customer 3단 물류 네트워크에서 어떤 창고 후보를 
 2. `designated warehouse model`
    `simulation.Warehouse Qty`를 유지한 상태에서 `best_model` 주변의 1-swap warehouse 조합을 최대 10건 샘플링한 뒤,
    각 조합을 강제로 오픈 상태로 고정하고 최선의 mapping 결과를 다시 계산한다.
+   `Mapping ID`로 인해 반드시 포함되어야 하는 warehouse는 샘플링 과정에서 제거하지 않는다.
+
+## 입력 데이터 규칙
+
+워크북은 다음 시트를 사용한다.
+
+- `simulation`
+- `plant`
+- `warehouse`
+- `customer`
+- `plantWarehouseCost`
+- `warehouseCustomerCost`
+
+현재 검증 로직은 아래를 확인한다.
+
+- plant, active warehouse, customer가 비어 있지 않은지
+- `simulation.Warehouse Qty`가 active warehouse 수 이하인지
+- 총 수요가 총 warehouse capacity 이하인지
+- 총 수요가 총 plant supply 이하인지
+- 모든 plant / active warehouse / customer가 필요한 cost row를 가지는지
+- 각 customer가 최소 1개의 warehouse assignment arc를 가지는지
+- `Product Qty`, `Do Qty`, `Capacity Qty`, `Shipment Qty`가 정수값인지
+- `Mapping ID`가 active warehouse를 가리키는지
+- `Mapping ID`가 지정한 `(warehouse, customer)` 쌍이 `warehouseCustomerCost`에 존재하는지
 
 ## Total Rank
 
@@ -89,13 +116,15 @@ python3 network_optimizer.py --input TRNS_DOWNLOAD_20260311081304.xls --output-r
 - `--random-seed`: 샘플링 시드
 - `--log-level`: `DEBUG`, `INFO`, `ERROR`
 
-## 출력 파일
+## 산출물
 
 - `output/<run_timestamp>/output_summary.xls`: 전체 케이스 비용 순위 종합
 - `output/<run_timestamp>/output_case1.xls`: case 상세 결과
 - `output/<run_timestamp>/output_case2.xls`: case 상세 결과
 - `output/<run_timestamp>/run.log`: 단계별 실행 로그
 - `output/<run_timestamp>/run_summary.json`: 실행 요약
+- `docs/best_model_ir.json`: best model의 solver-agnostic IR
+- `docs/designated_model_ir.json`: designated model의 solver-agnostic IR
 
 각 case 상세 파일에는 다음 시트가 들어간다.
 
@@ -109,7 +138,11 @@ python3 network_optimizer.py --input TRNS_DOWNLOAD_20260311081304.xls --output-r
 
 ```text
 network-3tier/
+|-- .gitignore
 |-- network_optimizer.py
+|-- docs/
+|   |-- best_model_ir.json
+|   `-- designated_model_ir.json
 |-- src/
 |   |-- network3tier/
 |   |   |-- cli.py
@@ -120,6 +153,18 @@ network-3tier/
 |   |   |-- output.py
 |   |   |-- ranking.py
 |   |   `-- sampling.py
+|-- output/                  # 실행 결과 디렉터리, gitignore 대상
 |-- requirements.txt
 `-- README.md
 ```
+
+## Git 관리 기준
+
+다음 항목은 커밋 대상에서 제외한다.
+
+- `.venv/`
+- `__pycache__/`, `*.py[cod]`
+- `output/`
+- `TRNS_DOWNLOAD_*.xls`
+- `TRNS_RESULT_DETAIL_*.xls`
+- 엑셀 임시 잠금 파일 (`~$*.xls`, `zNex~$*`)
