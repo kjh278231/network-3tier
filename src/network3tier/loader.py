@@ -114,36 +114,7 @@ def load_network_data(path: Path) -> NetworkData:
 def validate_network_data(data: NetworkData) -> None:
     LOGGER.info("Validating input data")
     errors: list[str] = []
-
-    total_demand = float(data.customers["Do Qty"].sum())
-    total_capacity = float(data.warehouses["Capacity Qty"].sum())
-    total_supply = float(data.plants["Product Qty"].sum())
     customer_mapping = get_customer_mapping_requirements(data)
-
-    if data.plants.empty:
-        errors.append("No plant rows found.")
-    if data.warehouses.empty:
-        errors.append("No active warehouse rows found.")
-    if data.customers.empty:
-        errors.append("No customer rows found.")
-    if data.simulation.warehouse_qty > len(data.warehouses):
-        errors.append(
-            f"Simulation warehouse qty ({data.simulation.warehouse_qty}) exceeds active warehouse count ({len(data.warehouses)})."
-        )
-    if total_demand > total_capacity:
-        errors.append(
-            f"Total Do Qty ({total_demand}) exceeds total active warehouse capacity ({total_capacity})."
-        )
-    if total_demand > total_supply:
-        errors.append(
-            f"Total Do Qty ({total_demand}) exceeds plant Product Qty ({total_supply})."
-        )
-    if data.simulation.warehouse_qty < len(set(customer_mapping.values())):
-        errors.append(
-            "Simulation warehouse qty "
-            f"({data.simulation.warehouse_qty}) is smaller than required mapped warehouse count "
-            f"({len(set(customer_mapping.values()))})."
-        )
 
     integral_checks = [
         ("plant.Product Qty", data.plants["Product Qty"]),
@@ -156,64 +127,10 @@ def validate_network_data(data: NetworkData) -> None:
         if not is_integral_series(series):
             errors.append(f"{label} must be integer-valued for the current IR/model semantics.")
 
-    wh_ids = set(data.warehouses["Warehouse ID"])
-    cust_ids = set(data.customers["Customer ID"])
-    plant_ids = set(data.plants["Plant ID"])
-
-    pw_wh_ids = set(data.plant_warehouse_cost["Warehouse ID"])
-    pw_plant_ids = set(data.plant_warehouse_cost["Plant ID"])
-    wc_wh_ids = set(data.warehouse_customer_cost["Warehouse ID"])
-    wc_cust_ids = set(data.warehouse_customer_cost["Customer ID"])
-
-    missing_pw_plant = sorted(plant_ids - pw_plant_ids)
-    missing_pw_wh = sorted(wh_ids - pw_wh_ids)
-    missing_wc_wh = sorted(wh_ids - wc_wh_ids)
-    missing_wc_cust = sorted(cust_ids - wc_cust_ids)
-
-    if missing_pw_plant:
-        errors.append(f"Plants missing plant->warehouse cost rows: {missing_pw_plant}")
-    if missing_pw_wh:
-        errors.append(
-            f"Warehouses missing plant->warehouse cost rows ({len(missing_pw_wh)}): {missing_pw_wh[:10]}"
-        )
-    if missing_wc_wh:
-        errors.append(
-            f"Warehouses missing warehouse->customer cost rows ({len(missing_wc_wh)}): {missing_wc_wh[:10]}"
-        )
-    if missing_wc_cust:
-        errors.append(
-            f"Customers missing warehouse->customer cost rows ({len(missing_wc_cust)}): {missing_wc_cust[:10]}"
-        )
-
-    coverage = data.warehouse_customer_cost.groupby("Customer ID")["Warehouse ID"].nunique()
-    uncovered_customers = sorted(cust_ids - set(coverage.index))
-    if uncovered_customers:
-        errors.append(
-            f"Customers without any eligible warehouse assignment ({len(uncovered_customers)}): {uncovered_customers[:10]}"
-        )
-
-    mapped_wh_ids = set(customer_mapping.values())
-    missing_mapped_wh = sorted(mapped_wh_ids - wh_ids)
-    if missing_mapped_wh:
-        errors.append(
-            f"Mapping ID references inactive or missing warehouses ({len(missing_mapped_wh)}): {missing_mapped_wh[:10]}"
-        )
-
-    missing_mapping_arcs: list[str] = []
-    wc_pairs = set(
-        zip(
-            data.warehouse_customer_cost["Warehouse ID"].astype(str),
-            data.warehouse_customer_cost["Customer ID"].astype(str),
-        )
-    )
-    for customer_id, warehouse_id in customer_mapping.items():
-        if (warehouse_id, customer_id) not in wc_pairs:
-            missing_mapping_arcs.append(f"{customer_id}->{warehouse_id}")
-    if missing_mapping_arcs:
-        errors.append(
-            "Mapped customers missing required warehouse->customer cost rows "
-            f"({len(missing_mapping_arcs)}): {missing_mapping_arcs[:10]}"
-        )
+    if data.simulation.warehouse_qty <= 0:
+        errors.append("Simulation warehouse qty must be positive.")
+    if customer_mapping and "Mapping ID" not in data.customers.columns:
+        errors.append("Customer Mapping ID normalization failed.")
 
     if errors:
         raise DataValidationError("\n".join(errors))

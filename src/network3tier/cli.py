@@ -4,16 +4,12 @@ import argparse
 import json
 from datetime import datetime
 from pathlib import Path
-
-from .loader import (
-    DataValidationError,
-    get_customer_mapping_requirements,
-    load_network_data,
-    validate_network_data,
-)
+from .infeasible_analysis import write_engine_infeasible_analysis_context
+from .loader import DataValidationError, get_customer_mapping_requirements, load_network_data, validate_network_data
 from .logging_utils import setup_logging
-from .optimizer import solve_case
+from .optimizer import OptimizationInfeasibleError, solve_case
 from .output import write_case_output, write_xls_workbook
+from .precheck import build_fail_case, precheck_issues_to_frame, run_precheck
 from .ranking import build_summary_workbook
 from .sampling import sample_neighboring_warehouse_sets
 
@@ -41,9 +37,52 @@ def main() -> None:
     try:
         data = load_network_data(Path(args.input))
         validate_network_data(data)
+        precheck_result = run_precheck(data)
+        if precheck_result.fail_fast:
+            fail_case = build_fail_case("best_model_precheck_fail", "fail_fast", precheck_result)
+            summary_df = fail_case.summary.copy()
+            case_path = write_case_output(run_dir, 1, fail_case)
+            logger.error(
+                "Precheck detected deterministic infeasibility. Solver execution skipped. issue_count=%d",
+                len(precheck_result.issues),
+            )
+            logger.info("Saved fail-fast workbook: %s", case_path)
+            summary_path = run_dir / "output_summary.xls"
+            write_xls_workbook(summary_path, {"summary": summary_df, "precheckIssues": precheck_issues_to_frame(precheck_result)})
+            summary_json = {
+                "run_dir": str(run_dir),
+                "run_status": "FAIL",
+                "failed_before_solver": True,
+                "precheck_issue_count": len(precheck_result.issues),
+                "precheck_issue_ids": [issue.issue_id for issue in precheck_result.issues],
+                "case_count": 1,
+                "best_case": None,
+                "best_total_cost": None,
+                "required_warehouse_qty": data.simulation.warehouse_qty,
+            }
+            (run_dir / "run_summary.json").write_text(
+                json.dumps(summary_json, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            print(json.dumps(summary_json, ensure_ascii=False))
+            return
         locked_warehouse_ids = set(get_customer_mapping_requirements(data).values())
 
-        best_case = solve_case(data, args.solver, "best_model", "best")
+        try:
+            best_case = solve_case(data, args.solver, "best_model", "best")
+        except OptimizationInfeasibleError:
+            context_path = write_engine_infeasible_analysis_context(
+                run_dir,
+                case_name="best_model",
+                case_type="best",
+                solver_name=args.solver,
+                executable_ir_path="docs/best_model.exir.json",
+            )
+            logger.error(
+                "Engine returned INFEASIBLE for best_model. Analysis context saved: %s",
+                context_path,
+            )
+            raise
         cases = [best_case]
 
         sampled_sets = sample_neighboring_warehouse_sets(
@@ -88,6 +127,10 @@ def main() -> None:
 
         summary_json = {
             "run_dir": str(run_dir),
+            "run_status": "SUCCESS",
+            "failed_before_solver": False,
+            "precheck_issue_count": 0,
+            "precheck_issue_ids": [],
             "case_count": len(cases),
             "best_case": best_case.case_name,
             "best_total_cost": best_case.total_cost,

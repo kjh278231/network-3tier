@@ -1,0 +1,273 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/network3tier/executable-ir.schema.json",
+  "title": "Executable Optimization IR",
+  "type": "object",
+  "required": [
+    "ir_version",
+    "model_name",
+    "problem_type",
+    "backend_class",
+    "objective",
+    "sets",
+    "parameters",
+    "variables",
+    "constraints"
+  ],
+  "properties": {
+    "ir_version": {
+      "type": "string"
+    },
+    "model_name": {
+      "type": "string"
+    },
+    "problem_type": {
+      "type": "string"
+    },
+    "backend_class": {
+      "type": "string",
+      "enum": ["linear_mip", "linear_cp_sat"]
+    },
+    "objective": {
+      "$ref": "#/$defs/objective"
+    },
+    "sets": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/setDef"
+      }
+    },
+    "parameters": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/parameterDef"
+      }
+    },
+    "variables": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/variableDef"
+      }
+    },
+    "constraints": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/constraintDef"
+      }
+    },
+    "rules": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ruleDef"
+      }
+    },
+    "parameter_bindings": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "$defs": {
+    "sourceFilter": {
+      "type": "object",
+      "required": ["column", "op", "value"],
+      "properties": {
+        "column": { "type": "string" },
+        "op": { "type": "string", "enum": ["eq", "ne", "in"] },
+        "value": {}
+      },
+      "additionalProperties": false
+    },
+    "sourceDef": {
+      "type": "object",
+      "required": ["kind", "table"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["table", "derived", "input"] },
+        "table": { "type": "string" },
+        "key": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "filters": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/sourceFilter" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "setDef": {
+      "type": "object",
+      "required": ["name", "symbol", "type", "source"],
+      "properties": {
+        "name": { "type": "string" },
+        "symbol": { "type": "string" },
+        "type": { "type": "string", "enum": ["entity", "arc", "input"] },
+        "from": { "type": "string" },
+        "to": { "type": "string" },
+        "source": { "$ref": "#/$defs/sourceDef" }
+      },
+      "additionalProperties": false
+    },
+    "bindingDef": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["column", "scalar", "input"] },
+        "table": { "type": "string" },
+        "key": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "row": { "type": "integer" },
+        "value_column": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "parameterDef": {
+      "type": "object",
+      "required": ["name", "symbol", "value_type", "index_sets", "binding"],
+      "properties": {
+        "name": { "type": "string" },
+        "symbol": { "type": "string" },
+        "value_type": { "type": "string", "enum": ["integer", "continuous", "string", "boolean"] },
+        "index_sets": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "binding": { "$ref": "#/$defs/bindingDef" }
+      },
+      "additionalProperties": false
+    },
+    "expr": {
+      "type": "object",
+      "required": ["op"],
+      "properties": {
+        "op": {
+          "type": "string",
+          "enum": ["const", "param", "var", "index", "item", "add", "sub", "mul", "sum", "min"]
+        },
+        "value": {},
+        "name": { "type": "string" },
+        "index": {
+          "type": "array",
+          "items": {}
+        },
+        "index_from": {
+          "type": "object"
+        },
+        "field": { "type": "string" },
+        "terms": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/expr" }
+        },
+        "left": { "$ref": "#/$defs/expr" },
+        "right": { "$ref": "#/$defs/expr" },
+        "args": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/expr" }
+        },
+        "over": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/iteratorDef" }
+        },
+        "expr": { "$ref": "#/$defs/expr" }
+      },
+      "additionalProperties": true
+    },
+    "predicateDef": {
+      "type": "object",
+      "required": ["left", "cmp", "right"],
+      "properties": {
+        "left": { "$ref": "#/$defs/expr" },
+        "cmp": { "type": "string", "enum": ["eq", "ne", "in"] },
+        "right": { "$ref": "#/$defs/expr" }
+      },
+      "additionalProperties": false
+    },
+    "iteratorDef": {
+      "type": "object",
+      "required": ["name", "set"],
+      "properties": {
+        "name": { "type": "string" },
+        "set": { "type": "string" },
+        "where": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/predicateDef" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "domainDef": {
+      "type": "object",
+      "properties": {
+        "lb": { "type": ["number", "integer"] },
+        "ub": { "type": ["number", "integer"] },
+        "lb_expr": { "$ref": "#/$defs/expr" },
+        "ub_expr": { "$ref": "#/$defs/expr" }
+      },
+      "additionalProperties": false
+    },
+    "variableDef": {
+      "type": "object",
+      "required": ["name", "symbol", "var_type", "index_sets", "domain"],
+      "properties": {
+        "name": { "type": "string" },
+        "symbol": { "type": "string" },
+        "var_type": { "type": "string", "enum": ["binary", "integer", "continuous"] },
+        "index_sets": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "domain": { "$ref": "#/$defs/domainDef" }
+      },
+      "additionalProperties": false
+    },
+    "constraintDef": {
+      "type": "object",
+      "required": ["id", "kind", "lhs", "sense", "rhs"],
+      "properties": {
+        "id": { "type": "string" },
+        "kind": { "type": "string", "enum": ["linear"] },
+        "forall": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/iteratorDef" }
+        },
+        "lhs": { "$ref": "#/$defs/expr" },
+        "sense": { "type": "string", "enum": ["eq", "le", "ge"] },
+        "rhs": { "$ref": "#/$defs/expr" }
+      },
+      "additionalProperties": false
+    },
+    "objective": {
+      "type": "object",
+      "required": ["sense", "expr"],
+      "properties": {
+        "sense": { "type": "string", "enum": ["min", "max"] },
+        "expr": { "$ref": "#/$defs/expr" }
+      },
+      "additionalProperties": false
+    },
+    "ruleDef": {
+      "type": "object",
+      "required": ["name", "enabled"],
+      "properties": {
+        "name": { "type": "string" },
+        "enabled": { "type": "boolean" },
+        "input_parameter": { "type": "string" },
+        "effect": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

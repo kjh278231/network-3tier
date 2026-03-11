@@ -1,0 +1,828 @@
+{
+  "ir_version": "1.0",
+  "model_name": "best_model",
+  "problem_type": "three_tier_network_design",
+  "backend_class": "linear_mip",
+  "objective": {
+    "sense": "min",
+    "expr": {
+      "op": "add",
+      "terms": [
+        {
+          "op": "sum",
+          "over": [
+            {
+              "name": "warehouse",
+              "set": "warehouses"
+            }
+          ],
+          "expr": {
+            "op": "mul",
+            "left": {
+              "op": "param",
+              "name": "warehouse_fixed_cost",
+              "index": [
+                {
+                  "op": "index",
+                  "name": "warehouse"
+                }
+              ]
+            },
+            "right": {
+              "op": "var",
+              "name": "open_warehouse",
+              "index": [
+                {
+                  "op": "index",
+                  "name": "warehouse"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "op": "sum",
+          "over": [
+            {
+              "name": "arc",
+              "set": "warehouse_customer_arcs"
+            }
+          ],
+          "expr": {
+            "op": "mul",
+            "left": {
+              "op": "param",
+              "name": "customer_demand",
+              "index": [
+                {
+                  "op": "item",
+                  "name": "arc",
+                  "field": "customer"
+                }
+              ]
+            },
+            "right": {
+              "op": "add",
+              "terms": [
+                {
+                  "op": "mul",
+                  "left": {
+                    "op": "param",
+                    "name": "warehouse_customer_transport_cost",
+                    "index": [
+                      {
+                        "op": "item",
+                        "name": "arc",
+                        "field": "warehouse"
+                      },
+                      {
+                        "op": "item",
+                        "name": "arc",
+                        "field": "customer"
+                      }
+                    ]
+                  },
+                  "right": {
+                    "op": "var",
+                    "name": "assign_customer",
+                    "index_from": {
+                      "arc": ["warehouse", "customer"]
+                    }
+                  }
+                },
+                {
+                  "op": "mul",
+                  "left": {
+                    "op": "param",
+                    "name": "warehouse_operation_cost",
+                    "index": [
+                      {
+                        "op": "item",
+                        "name": "arc",
+                        "field": "warehouse"
+                      }
+                    ]
+                  },
+                  "right": {
+                    "op": "var",
+                    "name": "assign_customer",
+                    "index_from": {
+                      "arc": ["warehouse", "customer"]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "op": "sum",
+          "over": [
+            {
+              "name": "arc",
+              "set": "plant_warehouse_arcs"
+            }
+          ],
+          "expr": {
+            "op": "mul",
+            "left": {
+              "op": "param",
+              "name": "plant_warehouse_transport_cost",
+              "index": [
+                {
+                  "op": "item",
+                  "name": "arc",
+                  "field": "plant"
+                },
+                {
+                  "op": "item",
+                  "name": "arc",
+                  "field": "warehouse"
+                }
+              ]
+            },
+            "right": {
+              "op": "var",
+              "name": "plant_to_warehouse_flow",
+              "index_from": {
+                "arc": ["plant", "warehouse"]
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "sets": [
+    {
+      "name": "plants",
+      "symbol": "P",
+      "type": "entity",
+      "source": {
+        "kind": "table",
+        "table": "plant",
+        "key": ["Plant ID"],
+        "key_aliases": ["plant"]
+      }
+    },
+    {
+      "name": "warehouses",
+      "symbol": "W",
+      "type": "entity",
+      "source": {
+        "kind": "table",
+        "table": "warehouse",
+        "key": ["Warehouse ID"],
+        "key_aliases": ["warehouse"],
+        "filters": [
+          {
+            "column": "Active Y/N",
+            "op": "eq",
+            "value": "Y"
+          }
+        ]
+      }
+    },
+    {
+      "name": "customers",
+      "symbol": "C",
+      "type": "entity",
+      "source": {
+        "kind": "table",
+        "table": "customer",
+        "key": ["Customer ID"],
+        "key_aliases": ["customer"]
+      }
+    },
+    {
+      "name": "mapped_customers",
+      "symbol": "C_map",
+      "type": "entity",
+      "source": {
+        "kind": "table",
+        "table": "customer",
+        "key": ["Customer ID"],
+        "key_aliases": ["customer"],
+        "filters": [
+          {
+            "column": "Mapping ID",
+            "op": "ne",
+            "value": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "plant_warehouse_arcs",
+      "symbol": "A_pw",
+      "type": "arc",
+      "from": "plants",
+      "to": "warehouses",
+      "source": {
+        "kind": "table",
+        "table": "plantWarehouseCost",
+        "key": ["Plant ID", "Warehouse ID"],
+        "key_aliases": ["plant", "warehouse"],
+        "field_aliases": {
+          "Plant ID": "plant",
+          "Warehouse ID": "warehouse"
+        }
+      }
+    },
+    {
+      "name": "warehouse_customer_arcs",
+      "symbol": "A_wc",
+      "type": "arc",
+      "from": "warehouses",
+      "to": "customers",
+      "source": {
+        "kind": "table",
+        "table": "warehouseCustomerCost",
+        "key": ["Warehouse ID", "Customer ID"],
+        "key_aliases": ["warehouse", "customer"],
+        "field_aliases": {
+          "Warehouse ID": "warehouse",
+          "Customer ID": "customer"
+        }
+      }
+    }
+  ],
+  "parameters": [
+    {
+      "name": "plant_supply",
+      "symbol": "s",
+      "value_type": "integer",
+      "index_sets": ["plants"],
+      "binding": {
+        "kind": "column",
+        "table": "plant",
+        "key": ["Plant ID"],
+        "value_column": "Product Qty"
+      }
+    },
+    {
+      "name": "customer_demand",
+      "symbol": "d",
+      "value_type": "integer",
+      "index_sets": ["customers"],
+      "binding": {
+        "kind": "column",
+        "table": "customer",
+        "key": ["Customer ID"],
+        "value_column": "Do Qty"
+      }
+    },
+    {
+      "name": "warehouse_capacity",
+      "symbol": "cap",
+      "value_type": "integer",
+      "index_sets": ["warehouses"],
+      "binding": {
+        "kind": "column",
+        "table": "warehouse",
+        "key": ["Warehouse ID"],
+        "value_column": "Capacity Qty"
+      }
+    },
+    {
+      "name": "warehouse_fixed_cost",
+      "symbol": "fc",
+      "value_type": "continuous",
+      "index_sets": ["warehouses"],
+      "binding": {
+        "kind": "column",
+        "table": "warehouse",
+        "key": ["Warehouse ID"],
+        "value_column": "Fixed Cost"
+      }
+    },
+    {
+      "name": "warehouse_operation_cost",
+      "symbol": "oc",
+      "value_type": "continuous",
+      "index_sets": ["warehouses"],
+      "binding": {
+        "kind": "column",
+        "table": "warehouse",
+        "key": ["Warehouse ID"],
+        "value_column": "Operation Cost"
+      }
+    },
+    {
+      "name": "plant_warehouse_transport_cost",
+      "symbol": "cpw",
+      "value_type": "continuous",
+      "index_sets": ["plant_warehouse_arcs"],
+      "binding": {
+        "kind": "column",
+        "table": "plantWarehouseCost",
+        "key": ["Plant ID", "Warehouse ID"],
+        "value_column": "Trns Cost"
+      }
+    },
+    {
+      "name": "warehouse_customer_transport_cost",
+      "symbol": "cwc",
+      "value_type": "continuous",
+      "index_sets": ["warehouse_customer_arcs"],
+      "binding": {
+        "kind": "column",
+        "table": "warehouseCustomerCost",
+        "key": ["Warehouse ID", "Customer ID"],
+        "value_column": "Trns Cost"
+      }
+    },
+    {
+      "name": "customer_mapping_id",
+      "symbol": "map",
+      "value_type": "string",
+      "index_sets": ["customers"],
+      "binding": {
+        "kind": "column",
+        "table": "customer",
+        "key": ["Customer ID"],
+        "value_column": "Mapping ID"
+      }
+    },
+    {
+      "name": "required_warehouse_count",
+      "symbol": "K",
+      "value_type": "integer",
+      "index_sets": [],
+      "binding": {
+        "kind": "scalar",
+        "table": "simulation",
+        "row": 0,
+        "value_column": "Warehouse Qty"
+      }
+    }
+  ],
+  "variables": [
+    {
+      "name": "open_warehouse",
+      "symbol": "y",
+      "var_type": "binary",
+      "index_sets": ["warehouses"],
+      "domain": {
+        "lb": 0,
+        "ub": 1
+      }
+    },
+    {
+      "name": "assign_customer",
+      "symbol": "x",
+      "var_type": "binary",
+      "index_sets": ["warehouse_customer_arcs"],
+      "domain": {
+        "lb": 0,
+        "ub": 1
+      }
+    },
+    {
+      "name": "plant_to_warehouse_flow",
+      "symbol": "f",
+      "var_type": "integer",
+      "index_sets": ["plant_warehouse_arcs"],
+      "domain": {
+        "lb": 0,
+        "ub_expr": {
+          "op": "min",
+          "args": [
+            {
+              "op": "param",
+              "name": "plant_supply",
+              "index": ["plant"]
+            },
+            {
+              "op": "param",
+              "name": "warehouse_capacity",
+              "index": ["warehouse"]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "constraints": [
+    {
+      "id": "customer_single_sourcing",
+      "kind": "linear",
+      "forall": [
+        {
+          "name": "customer",
+          "set": "customers"
+        }
+      ],
+      "lhs": {
+        "op": "sum",
+        "over": [
+          {
+            "name": "arc",
+            "set": "warehouse_customer_arcs",
+            "where": [
+              {
+                "left": {
+                  "op": "item",
+                  "name": "arc",
+                  "field": "customer"
+                },
+                "cmp": "eq",
+                "right": {
+                  "op": "index",
+                  "name": "customer"
+                }
+              }
+            ]
+          }
+        ],
+        "expr": {
+          "op": "var",
+          "name": "assign_customer",
+          "index_from": {
+            "arc": ["warehouse", "customer"]
+          }
+        }
+      },
+      "sense": "eq",
+      "rhs": {
+        "op": "const",
+        "value": 1
+      }
+    },
+    {
+      "id": "mapped_customer_fixed_assignment",
+      "kind": "linear",
+      "forall": [
+        {
+          "name": "customer",
+          "set": "mapped_customers"
+        }
+      ],
+      "lhs": {
+        "op": "var",
+        "name": "assign_customer",
+        "index": [
+          {
+            "op": "param",
+            "name": "customer_mapping_id",
+            "index": [
+              {
+                "op": "index",
+                "name": "customer"
+              }
+            ]
+          },
+          {
+            "op": "index",
+            "name": "customer"
+          }
+        ]
+      },
+      "sense": "eq",
+      "rhs": {
+        "op": "const",
+        "value": 1
+      }
+    },
+    {
+      "id": "warehouse_capacity_activation",
+      "kind": "linear",
+      "forall": [
+        {
+          "name": "warehouse",
+          "set": "warehouses"
+        }
+      ],
+      "lhs": {
+        "op": "sum",
+        "over": [
+          {
+            "name": "arc",
+            "set": "warehouse_customer_arcs",
+            "where": [
+              {
+                "left": {
+                  "op": "item",
+                  "name": "arc",
+                  "field": "warehouse"
+                },
+                "cmp": "eq",
+                "right": {
+                  "op": "index",
+                  "name": "warehouse"
+                }
+              }
+            ]
+          }
+        ],
+        "expr": {
+          "op": "mul",
+          "left": {
+            "op": "param",
+            "name": "customer_demand",
+            "index": [
+              {
+                "op": "item",
+                "name": "arc",
+                "field": "customer"
+              }
+            ]
+          },
+          "right": {
+            "op": "var",
+            "name": "assign_customer",
+            "index_from": {
+              "arc": ["warehouse", "customer"]
+            }
+          }
+        }
+      },
+      "sense": "le",
+      "rhs": {
+        "op": "mul",
+        "left": {
+          "op": "param",
+          "name": "warehouse_capacity",
+          "index": [
+            {
+              "op": "index",
+              "name": "warehouse"
+            }
+          ]
+        },
+        "right": {
+          "op": "var",
+          "name": "open_warehouse",
+          "index": [
+            {
+              "op": "index",
+              "name": "warehouse"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "open_warehouse_must_serve_customer",
+      "kind": "linear",
+      "forall": [
+        {
+          "name": "warehouse",
+          "set": "warehouses"
+        }
+      ],
+      "lhs": {
+        "op": "sum",
+        "over": [
+          {
+            "name": "arc",
+            "set": "warehouse_customer_arcs",
+            "where": [
+              {
+                "left": {
+                  "op": "item",
+                  "name": "arc",
+                  "field": "warehouse"
+                },
+                "cmp": "eq",
+                "right": {
+                  "op": "index",
+                  "name": "warehouse"
+                }
+              }
+            ]
+          }
+        ],
+        "expr": {
+          "op": "var",
+          "name": "assign_customer",
+          "index_from": {
+            "arc": ["warehouse", "customer"]
+          }
+        }
+      },
+      "sense": "ge",
+      "rhs": {
+        "op": "var",
+        "name": "open_warehouse",
+        "index": [
+          {
+            "op": "index",
+            "name": "warehouse"
+          }
+        ]
+      }
+    },
+    {
+      "id": "warehouse_flow_balance",
+      "kind": "linear",
+      "forall": [
+        {
+          "name": "warehouse",
+          "set": "warehouses"
+        }
+      ],
+      "lhs": {
+        "op": "sum",
+        "over": [
+          {
+            "name": "arc",
+            "set": "plant_warehouse_arcs",
+            "where": [
+              {
+                "left": {
+                  "op": "item",
+                  "name": "arc",
+                  "field": "warehouse"
+                },
+                "cmp": "eq",
+                "right": {
+                  "op": "index",
+                  "name": "warehouse"
+                }
+              }
+            ]
+          }
+        ],
+        "expr": {
+          "op": "var",
+          "name": "plant_to_warehouse_flow",
+          "index_from": {
+            "arc": ["plant", "warehouse"]
+          }
+        }
+      },
+      "sense": "eq",
+      "rhs": {
+        "op": "sum",
+        "over": [
+          {
+            "name": "arc",
+            "set": "warehouse_customer_arcs",
+            "where": [
+              {
+                "left": {
+                  "op": "item",
+                  "name": "arc",
+                  "field": "warehouse"
+                },
+                "cmp": "eq",
+                "right": {
+                  "op": "index",
+                  "name": "warehouse"
+                }
+              }
+            ]
+          }
+        ],
+        "expr": {
+          "op": "mul",
+          "left": {
+            "op": "param",
+            "name": "customer_demand",
+            "index": [
+              {
+                "op": "item",
+                "name": "arc",
+                "field": "customer"
+              }
+            ]
+          },
+          "right": {
+            "op": "var",
+            "name": "assign_customer",
+            "index_from": {
+              "arc": ["warehouse", "customer"]
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "plant_supply_limit",
+      "kind": "linear",
+      "forall": [
+        {
+          "name": "plant",
+          "set": "plants"
+        }
+      ],
+      "lhs": {
+        "op": "sum",
+        "over": [
+          {
+            "name": "arc",
+            "set": "plant_warehouse_arcs",
+            "where": [
+              {
+                "left": {
+                  "op": "item",
+                  "name": "arc",
+                  "field": "plant"
+                },
+                "cmp": "eq",
+                "right": {
+                  "op": "index",
+                  "name": "plant"
+                }
+              }
+            ]
+          }
+        ],
+        "expr": {
+          "op": "var",
+          "name": "plant_to_warehouse_flow",
+          "index_from": {
+            "arc": ["plant", "warehouse"]
+          }
+        }
+      },
+      "sense": "le",
+      "rhs": {
+        "op": "param",
+        "name": "plant_supply",
+        "index": [
+          {
+            "op": "index",
+            "name": "plant"
+          }
+        ]
+      }
+    },
+    {
+      "id": "mapped_warehouse_open_fixing",
+      "kind": "linear",
+      "forall": [
+        {
+          "name": "customer",
+          "set": "mapped_customers"
+        }
+      ],
+      "lhs": {
+        "op": "var",
+        "name": "open_warehouse",
+        "index": [
+          {
+            "op": "param",
+            "name": "customer_mapping_id",
+            "index": [
+              {
+                "op": "index",
+                "name": "customer"
+              }
+            ]
+          }
+        ]
+      },
+      "sense": "eq",
+      "rhs": {
+        "op": "const",
+        "value": 1
+      }
+    },
+    {
+      "id": "warehouse_count_exact",
+      "kind": "linear",
+      "lhs": {
+        "op": "sum",
+        "over": [
+          {
+            "name": "warehouse",
+            "set": "warehouses"
+          }
+        ],
+        "expr": {
+          "op": "var",
+          "name": "open_warehouse",
+          "index": [
+            {
+              "op": "index",
+              "name": "warehouse"
+            }
+          ]
+        }
+      },
+      "sense": "eq",
+      "rhs": {
+        "op": "param",
+        "name": "required_warehouse_count",
+        "index": []
+      }
+    }
+  ],
+  "rules": [
+    {
+      "name": "mapping_id_forces_assignment",
+      "enabled": true,
+      "input_parameter": "customer_mapping_id",
+      "effect": [
+        "force_assignment_to_mapped_warehouse",
+        "force_open_mapped_warehouse"
+      ]
+    }
+  ],
+  "notes": [
+    "This EXIR encodes the current best_model semantics for linear MIP backends.",
+    "It is intended as the baseline model for infeasibility submodel experiments."
+  ]
+}

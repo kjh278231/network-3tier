@@ -42,6 +42,7 @@ def write_case_output(run_dir: Path, case_index: int, case_result: CaseResult) -
         case_path,
         {
             "summary": case_result.summary,
+            "precheckIssues": case_result.precheck_issues,
             "plantWarehouseRoute": case_result.plant_warehouse_routes,
             "warehouse": case_result.warehouse_summary,
             "warehouseCustomerRoute": case_result.warehouse_customer_routes,

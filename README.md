@@ -89,6 +89,26 @@ Plant-Warehouse-Customer 3단 물류 네트워크에서 어떤 창고 후보를 
 - `Mapping ID`가 active warehouse를 가리키는지
 - `Mapping ID`가 지정한 `(warehouse, customer)` 쌍이 `warehouseCustomerCost`에 존재하는지
 
+## Precheck / Fail-fast
+
+solver 실행 전 deterministic precheck를 수행한다. 아래와 같이 solver 없이 infeasible이 확정되는 조건이 발견되면 엔진 실행을 건너뛰고 fail case 결과를 출력한다.
+
+- 총 plant supply < 총 customer demand
+- 총 active warehouse capacity < 총 customer demand
+- capacity 상위 `K=simulation.Warehouse Qty`개 warehouse 합 < 총 customer demand
+- distinct `Mapping ID` warehouse 수 > `K`
+- mapped warehouse capacity 합 < mapped customer demand 합
+- plant / warehouse / customer arc coverage 부족
+- `Mapping ID`가 inactive warehouse를 참조하거나 required arc가 없는 경우
+
+fail-fast가 발생하면 다음 산출물을 남긴다.
+
+- `output/<run_timestamp>/output_case1.xls`
+- `output/<run_timestamp>/output_summary.xls`
+- `output/<run_timestamp>/run_summary.json`
+
+이때 workbook에는 `precheckIssues` 시트가 포함되고, summary에는 `Run Status`, `Fail Stage`, `Fail Reason Count`, `Fail Reason Summary`가 채워진다.
+
 ## Total Rank
 
 종합 점수는 1등 값을 기준으로 0~1로 정규화한 후 계산한다.
@@ -124,7 +144,17 @@ python3 network_optimizer.py --input TRNS_DOWNLOAD_20260311081304.xls --output-r
 - `output/<run_timestamp>/run.log`: 단계별 실행 로그
 - `output/<run_timestamp>/run_summary.json`: 실행 요약
 - `docs/best_model_ir.json`: best model의 solver-agnostic IR
+- `docs/best_model.exir.json`: best model의 실행형 IR
 - `docs/designated_model_ir.json`: designated model의 solver-agnostic IR
+- `docs/executable_ir_schema.md`: 실행형 IR 설계 문서
+- `docs/executable_ir_schema.json`: 실행형 IR JSON Schema
+- `docs/infeasible_experiment_catalog.md`: infeasible 발생 시 시도할 서브모델 실험 후보군
+
+## Engine infeasible 분석 시작점
+
+- precheck fail-fast로 종료된 경우에는 LLM infeasible 원인 분석을 시작하지 않는다.
+- 오직 solver가 실제로 실행된 뒤 `INFEASIBLE`을 반환한 경우에만 분석 시작 컨텍스트를 생성한다.
+- 이 경우 `output/<run_timestamp>/engine_infeasible_analysis_context.json`이 생성되고, baseline 실행형 IR로 `docs/best_model.exir.json`을 참조한다.
 
 각 case 상세 파일에는 다음 시트가 들어간다.
 

@@ -13,6 +13,13 @@ from .logging_utils import get_logger
 LOGGER = get_logger()
 
 
+class OptimizationInfeasibleError(RuntimeError):
+    def __init__(self, case_name: str, status: int):
+        super().__init__(f"Optimization infeasible for case '{case_name}'. Solver status: {status}")
+        self.case_name = case_name
+        self.status = status
+
+
 def build_solver(
     data: NetworkData,
     solver_name: str,
@@ -147,6 +154,8 @@ def solve_case(
     )
 
     status = solver.Solve()
+    if status == pywraplp.Solver.INFEASIBLE:
+        raise OptimizationInfeasibleError(case_name, status)
     if status != pywraplp.Solver.OPTIMAL:
         raise RuntimeError(f"Optimization failed for case '{case_name}'. Solver status: {status}")
 
@@ -276,6 +285,10 @@ def solve_case(
             {
                 "Case Name": case_name,
                 "Case Type": case_type,
+                "Run Status": "SUCCESS",
+                "Fail Stage": None,
+                "Fail Reason Count": 0,
+                "Fail Reason Summary": "",
                 "Total Rank": None,
                 "Cost Rank": None,
                 "Optimal Cost": float(solver.Objective().Value()),
@@ -312,11 +325,15 @@ def solve_case(
     return CaseResult(
         case_name=case_name,
         case_type=case_type,
+        run_status="SUCCESS",
         total_cost=float(solver.Objective().Value()),
         selected_warehouses=selected_warehouses,
         plant_warehouse_routes=plant_warehouse_df,
         warehouse_summary=warehouse_summary_df,
         warehouse_customer_routes=warehouse_customer_df,
         coverage_detail=coverage_detail_df,
+        precheck_issues=pd.DataFrame(
+            columns=["issue_id", "category", "severity", "certainty", "description", "evidence"]
+        ),
         summary=summary_df,
     )
