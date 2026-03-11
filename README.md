@@ -123,24 +123,3 @@ network-3tier/
 |-- requirements.txt
 `-- README.md
 ```
-
-## 현재 입력 파일 점검 결과
-
-`TRNS_DOWNLOAD_20260311081304.xls`를 기준으로 확인한 결과:
-
-- Plant: 1개
-- Active Warehouse: 21개
-- Customer: 73개
-- Plant -> Warehouse cost row: 21개
-- Warehouse -> Customer cost row: 6개
-
-즉 현재 파일은 `warehouseCustomerCost` 시트가 전체 네트워크를 커버하지 못한다.
-
-구체적으로:
-
-- 21개 active warehouse 중 `WH_1`만 warehouse-customer 비용이 있다.
-- 73개 customer 중 6개 customer만 warehouse-customer 비용이 있다.
-
-따라서 현재 상태로는 모든 Customer를 정확히 1개 Warehouse에 연결하는 제약을 만족할 수 없어서 최적해를 계산할 수 없다.
-
-프로그램은 이 경우 validation 단계에서 중단하며 누락 내역을 출력한다.
