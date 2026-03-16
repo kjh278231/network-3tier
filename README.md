@@ -124,6 +124,7 @@ python3 network_optimizer.py --input TRNS_DOWNLOAD_20260311081304.xls --output-r
 - `--solver`: `SCIP` 또는 `CBC`
 - `--max-samples`: 샘플링할 지정 창고 케이스 수
 - `--random-seed`: 샘플링 시드
+- `--disable-inventory-capacity`: warehouse inventory capacity 제약 비활성화
 - `--log-level`: `DEBUG`, `INFO`, `ERROR`
 
 ## 산출물

@@ -32,6 +32,7 @@ def build_solver(
     data: NetworkData,
     solver_name: str,
     forced_open_warehouses: set[str] | None = None,
+    enable_inventory_capacity: bool = True,
 ):
     solver = pywraplp.Solver.CreateSolver(solver_name)
     if solver is None:
@@ -118,7 +119,8 @@ def build_solver(
         inbound_expr[w] = inbound
         solver.Add(outbound <= inbound)
         solver.Add(inbound <= capacity_by_warehouse[w] * y[w])
-        solver.Add(inbound - outbound <= inventory_capacity_by_warehouse[w] * y[w])
+        if enable_inventory_capacity:
+            solver.Add(inbound - outbound <= inventory_capacity_by_warehouse[w] * y[w])
         solver.Add(customer_count_expr[w] >= y[w])
 
     for p in plant_ids:
@@ -189,6 +191,7 @@ def solve_case(
     case_name: str,
     case_type: str,
     forced_open_warehouses: set[str] | None = None,
+    enable_inventory_capacity: bool = True,
 ) -> CaseResult:
     LOGGER.info("Solving case '%s' (%s)", case_name, case_type)
     (
@@ -204,7 +207,7 @@ def solve_case(
         inventory_capacity_by_warehouse,
         total_inbound_expr,
         set_total_cost_objective,
-    ) = build_solver(data, solver_name, forced_open_warehouses)
+    ) = build_solver(data, solver_name, forced_open_warehouses, enable_inventory_capacity)
 
     inbound_status = solver.Solve()
     if inbound_status != pywraplp.Solver.OPTIMAL:

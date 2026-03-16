@@ -27,6 +27,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--solver", default="SCIP", choices=["SCIP", "CBC"])
     parser.add_argument("--max-samples", type=int, default=10)
     parser.add_argument("--random-seed", type=int, default=42)
+    parser.add_argument(
+        "--disable-inventory-capacity",
+        action="store_true",
+        help="Disable the warehouse inventory capacity constraint.",
+    )
     parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "ERROR"])
     return parser.parse_args()
 
@@ -37,13 +42,20 @@ def main() -> None:
     logger = setup_logging(run_dir, args.log_level)
     logger.info("Run directory: %s", run_dir)
     logger.info("Starting optimization workflow")
+    logger.info("Inventory capacity constraint enabled: %s", not args.disable_inventory_capacity)
 
     try:
         data = load_network_data(Path(args.input))
         validate_network_data(data)
         locked_warehouse_ids = set(get_customer_mapping_requirements(data).values())
 
-        best_case = solve_case(data, args.solver, "best_model", "best")
+        best_case = solve_case(
+            data,
+            args.solver,
+            "best_model",
+            "best",
+            enable_inventory_capacity=not args.disable_inventory_capacity,
+        )
         cases = [best_case]
 
         sampled_sets = sample_neighboring_warehouse_sets(
@@ -66,6 +78,7 @@ def main() -> None:
                     case_name,
                     "designated",
                     forced_open_warehouses=warehouse_set,
+                    enable_inventory_capacity=not args.disable_inventory_capacity,
                 )
             except RuntimeError as exc:
                 logger.error("Skipping infeasible sampled case '%s': %s", case_name, exc)
@@ -92,6 +105,7 @@ def main() -> None:
             "best_case": best_case.case_name,
             "best_total_cost": best_case.total_cost,
             "best_total_inbound_qty": float(best_case.summary.iloc[0]["Optimal Total Inbound Qty"]),
+            "inventory_capacity_constraint_enabled": not args.disable_inventory_capacity,
             "required_warehouse_qty": data.simulation.warehouse_qty,
         }
         (run_dir / "run_summary.json").write_text(
