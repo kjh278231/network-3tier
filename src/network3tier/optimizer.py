@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import os
 
 import pandas as pd
 from ortools.linear_solver import pywraplp
@@ -13,6 +14,20 @@ from .logging_utils import get_logger
 LOGGER = get_logger()
 
 
+def configure_solver_threads(solver: pywraplp.Solver, solver_name: str) -> int:
+    cpu_threads = max(1, os.cpu_count() or 1)
+    configured = solver.SetNumThreads(cpu_threads)
+    if configured:
+        LOGGER.info("Configured solver '%s' to use %d thread(s)", solver_name, cpu_threads)
+    else:
+        LOGGER.warning(
+            "Solver '%s' did not confirm thread configuration; requested %d thread(s)",
+            solver_name,
+            cpu_threads,
+        )
+    return cpu_threads
+
+
 def build_solver(
     data: NetworkData,
     solver_name: str,
@@ -21,6 +36,7 @@ def build_solver(
     solver = pywraplp.Solver.CreateSolver(solver_name)
     if solver is None:
         raise RuntimeError(f"Failed to create OR-Tools solver: {solver_name}")
+    configure_solver_threads(solver, solver_name)
 
     plants = data.plants[["Plant ID", "Product Qty", "Shipment Qty", "Location Name"]].copy()
     warehouses = data.warehouses[
