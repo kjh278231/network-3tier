@@ -1,0 +1,7 @@
+2026-03-16 13:54:18 | INFO | network_optimizer | Run directory: output_compare/20260316135418
+2026-03-16 13:54:18 | INFO | network_optimizer | Starting optimization workflow
+2026-03-16 13:54:18 | INFO | network_optimizer | Loading workbook: TRNS_DOWNLOAD_20260316132913.xlsx
+2026-03-16 13:54:23 | INFO | network_optimizer | Loaded 1 plant(s), 119 active warehouse(s), 843 customer(s)
+2026-03-16 13:54:23 | INFO | network_optimizer | Validating input data
+2026-03-16 13:54:23 | INFO | network_optimizer | Validation passed
+2026-03-16 13:54:23 | INFO | network_optimizer | Solving case 'best_model' (best)
