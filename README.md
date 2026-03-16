@@ -1,6 +1,6 @@
 # Network 3-Tier Optimizer
 
-Plant-Warehouse-Customer 3단 물류 네트워크에서 어떤 창고 후보를 열어야 총비용이 최소가 되는지 계산하는 Python/OR-Tools 프로그램이다.
+Plant-Warehouse-Customer 3단 물류 네트워크에서 어떤 창고 후보를 열어야 총 inbound를 최대화하고, 그 해들 중 총비용이 최소가 되는지 계산하는 Python/OR-Tools 프로그램이다.
 
 ## 문제 정의
 
@@ -12,13 +12,17 @@ Plant-Warehouse-Customer 3단 물류 네트워크에서 어떤 창고 후보를 
 
 현재 구현은 다음 제약을 만족한다.
 
-- 창고 유입 물량은 창고 `Capacity Qty`를 초과할 수 없다.
+- 창고 `Capacity Qty`는 throughput capacity로 해석한다.
+- 창고별 `Inventory Capacity = Capacity Qty * 30%`를 사용한다.
+- 창고 outbound 물량은 해당 Warehouse가 담당하는 Customer 수요 합계다.
+- 창고 outbound 물량은 창고 inbound 물량을 초과할 수 없다.
+- 창고 inbound 물량은 창고 `Capacity Qty`를 초과할 수 없다.
+- 창고 `inbound - outbound`는 창고 `Inventory Capacity`를 초과할 수 없다.
 - Plant 출하량은 Plant `Product Qty`를 초과할 수 없다.
 - 각 Customer는 정확히 하나의 Warehouse에만 연결된다.
 - `customer.Mapping ID`가 있으면 해당 Customer는 지정된 `Warehouse ID`로만 배정된다.
 - `customer.Mapping ID`로 참조된 warehouse는 반드시 오픈된다.
 - Customer가 배정된 Warehouse만 오픈된다.
-- Warehouse 유입량 = 해당 Warehouse가 담당하는 Customer 수요 합계
 - `simulation.Warehouse Qty` 만큼의 warehouse를 정확히 사용한다.
 - 사용된 warehouse는 최소 1개 이상의 customer를 반드시 배정받는다.
 - Plant -> Warehouse 물량은 정수 단위로 여러 plant에 자유롭게 분할될 수 있다.
@@ -26,6 +30,11 @@ Plant-Warehouse-Customer 3단 물류 네트워크에서 어떤 창고 후보를 
 - Warehouse 후보는 `warehouse.Active Y/N = Y` 인 행만 사용한다.
 
 ## 비용 구조
+
+최적화는 2단계 목적식으로 동작한다.
+
+1. 총 `Plant -> Warehouse` inbound 물량을 최대화한다.
+2. 1단계 최적 inbound를 유지하는 해들 중 총비용을 최소화한다.
 
 총비용은 아래 항목의 합으로 계산한다.
 
@@ -36,10 +45,11 @@ Plant-Warehouse-Customer 3단 물류 네트워크에서 어떤 창고 후보를 
 
 가정:
 
-- 비용 목적식은 `Do Qty`만 사용한다.
+- 비용 2차 목적식은 기존과 동일하게 `Do Qty`와 실제 inbound flow를 사용한다.
 - `Operation Cost`와 `Trns Cost`는 1:1로 비교 가능한 동일 cost basis를 사용한다.
 - `Shipment Qty`는 정수값이며 비용 목적식에 사용하지 않고 `leadtime` 계산에만 사용한다.
 - Plant 공급한도는 `Product Qty`를 사용한다.
+- Customer 수요는 항상 100% 충족한다. 추가 inbound는 inventory로만 남을 수 있다.
 - `Structure`, `Status`, `Distance Type`은 현재 프로젝트에서 사용하지 않는다.
 
 ## Leadtime / Coverage 계산
@@ -81,7 +91,7 @@ Plant-Warehouse-Customer 3단 물류 네트워크에서 어떤 창고 후보를 
 
 - plant, active warehouse, customer가 비어 있지 않은지
 - `simulation.Warehouse Qty`가 active warehouse 수 이하인지
-- 총 수요가 총 warehouse capacity 이하인지
+- 총 수요가 총 warehouse throughput capacity 이하인지
 - 총 수요가 총 plant supply 이하인지
 - 모든 plant / active warehouse / customer가 필요한 cost row를 가지는지
 - 각 customer가 최소 1개의 warehouse assignment arc를 가지는지
@@ -133,6 +143,8 @@ python3 network_optimizer.py --input TRNS_DOWNLOAD_20260311081304.xls --output-r
 - `warehouse`
 - `warehouseCustomerRoute`
 - `coverageDetail`
+
+`warehouse` 시트와 `summary` 시트에는 inventory 관련 컬럼이 추가된다.
 
 ## 프로젝트 구조
 

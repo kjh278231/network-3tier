@@ -116,7 +116,7 @@ def validate_network_data(data: NetworkData) -> None:
     errors: list[str] = []
 
     total_demand = float(data.customers["Do Qty"].sum())
-    total_capacity = float(data.warehouses["Capacity Qty"].sum())
+    total_throughput_capacity = float(data.warehouses["Capacity Qty"].sum())
     total_supply = float(data.plants["Product Qty"].sum())
     customer_mapping = get_customer_mapping_requirements(data)
 
@@ -130,9 +130,9 @@ def validate_network_data(data: NetworkData) -> None:
         errors.append(
             f"Simulation warehouse qty ({data.simulation.warehouse_qty}) exceeds active warehouse count ({len(data.warehouses)})."
         )
-    if total_demand > total_capacity:
+    if total_demand > total_throughput_capacity:
         errors.append(
-            f"Total Do Qty ({total_demand}) exceeds total active warehouse capacity ({total_capacity})."
+            f"Total Do Qty ({total_demand}) exceeds total active warehouse throughput capacity ({total_throughput_capacity})."
         )
     if total_demand > total_supply:
         errors.append(

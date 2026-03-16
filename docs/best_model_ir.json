@@ -1,6 +1,6 @@
 {
   "problem_type": "three_tier_network_design",
-  "objective_sense": "min",
+  "objective_sense": "lexicographic(max_inbound_then_min_cost)",
   "sets": [
     {
       "name": "plants",
@@ -54,8 +54,16 @@
       "name": "warehouse_capacity",
       "symbol": "cap[w]",
       "index": ["warehouse"],
-      "description": "각 warehouse의 처리 가능 용량",
+      "description": "각 warehouse의 throughput capacity",
       "source": "warehouse.Capacity Qty",
+      "unit": "qty"
+    },
+    {
+      "name": "warehouse_inventory_capacity",
+      "symbol": "icap[w]",
+      "index": ["warehouse"],
+      "description": "각 warehouse의 inventory capacity; throughput capacity의 30%로 계산되는 파생 파라미터",
+      "source": "derived as 0.3 * warehouse.Capacity Qty",
       "unit": "qty"
     },
     {
@@ -178,11 +186,29 @@
     {
       "id": "warehouse_capacity_activation",
       "family": "capacity",
-      "description": "warehouse에 배정된 총 수요는 warehouse capacity를 넘을 수 없고, warehouse가 닫혀 있으면 배정량은 0이어야 한다.",
-      "expression_summary": "for each w in W: sum_{c:(w,c) in A_wc} d[c] * x[w,c] <= cap[w] * y[w]",
-      "related_variables": ["assign_customer", "open_warehouse"],
+      "description": "warehouse inbound는 throughput capacity를 넘을 수 없고, warehouse가 닫혀 있으면 inbound는 0이어야 한다.",
+      "expression_summary": "for each w in W: sum_{p:(p,w) in A_pw} f[p,w] <= cap[w] * y[w]",
+      "related_variables": ["plant_to_warehouse_flow", "open_warehouse"],
       "related_parameters": ["customer_demand", "warehouse_capacity"],
-      "source_locations": ["src/network3tier/optimizer.py:71-77"]
+      "source_locations": ["src/network3tier/optimizer.py"]
+    },
+    {
+      "id": "warehouse_outbound_not_exceed_inbound",
+      "family": "flow_balance",
+      "description": "warehouse outbound(배정 수요)은 inbound를 초과할 수 없다.",
+      "expression_summary": "for each w in W: sum_{c:(w,c) in A_wc} d[c] * x[w,c] <= sum_{p:(p,w) in A_pw} f[p,w]",
+      "related_variables": ["assign_customer", "plant_to_warehouse_flow"],
+      "related_parameters": ["customer_demand"],
+      "source_locations": ["src/network3tier/optimizer.py"]
+    },
+    {
+      "id": "warehouse_inventory_capacity_limit",
+      "family": "inventory",
+      "description": "warehouse의 inbound와 outbound 차이(재고)는 inventory capacity를 넘을 수 없다.",
+      "expression_summary": "for each w in W: sum_{p:(p,w) in A_pw} f[p,w] - sum_{c:(w,c) in A_wc} d[c] * x[w,c] <= icap[w] * y[w]",
+      "related_variables": ["assign_customer", "plant_to_warehouse_flow", "open_warehouse"],
+      "related_parameters": ["customer_demand", "warehouse_inventory_capacity"],
+      "source_locations": ["src/network3tier/optimizer.py"]
     },
     {
       "id": "open_warehouse_must_serve_customer",
@@ -192,15 +218,6 @@
       "related_variables": ["assign_customer", "open_warehouse"],
       "related_parameters": [],
       "source_locations": ["src/network3tier/optimizer.py:73-78"]
-    },
-    {
-      "id": "warehouse_flow_balance",
-      "family": "flow_balance",
-      "description": "각 warehouse의 plant로부터의 유입량은 해당 warehouse에 배정된 customer 수요 총합과 같아야 한다.",
-      "expression_summary": "for each w in W: sum_{p:(p,w) in A_pw} f[p,w] = sum_{c:(w,c) in A_wc} d[c] * x[w,c]",
-      "related_variables": ["plant_to_warehouse_flow", "assign_customer"],
-      "related_parameters": ["customer_demand"],
-      "source_locations": ["src/network3tier/optimizer.py:80-84"]
     },
     {
       "id": "plant_supply_limit",
@@ -222,7 +239,21 @@
     }
   ],
   "objective": {
-    "terms": [
+    "priority_order": [
+      {
+        "priority": 1,
+        "name": "maximize_total_inbound",
+        "sense": "max",
+        "expression_summary": "sum_{(p,w) in A_pw} f[p,w]",
+        "related_variables": ["plant_to_warehouse_flow"],
+        "related_parameters": []
+      },
+      {
+        "priority": 2,
+        "name": "minimize_total_cost_given_optimal_inbound",
+        "sense": "min",
+        "locking_constraint": "sum_{(p,w) in A_pw} f[p,w] >= inbound*",
+        "terms": [
       {
         "name": "warehouse_fixed_cost_term",
         "expression_summary": "sum_{w in W} fc[w] * y[w]",
@@ -250,6 +281,8 @@
         "coefficient_source": "plantWarehouseCost.Trns Cost",
         "related_variables": ["plant_to_warehouse_flow"],
         "related_parameters": ["plant_warehouse_transport_cost"]
+      }
+        ]
       }
     ]
   },
@@ -280,11 +313,11 @@
     },
     {
       "source_name": "customer.Do Qty",
-      "mapped_to": "customer_demand d[c] and assignment-weighted objective coefficients"
+      "mapped_to": "customer_demand d[c], outbound definition, and assignment-weighted cost coefficients"
     },
     {
       "source_name": "warehouse.Capacity Qty",
-      "mapped_to": "warehouse_capacity cap[w]"
+      "mapped_to": "warehouse_capacity cap[w] and derived warehouse_inventory_capacity icap[w]"
     },
     {
       "source_name": "warehouse.Fixed Cost",
@@ -337,12 +370,13 @@
     "warehouse별 운영비는 warehouse를 통과하는 수요 물량 단위당 비용으로 모델링된다.",
     "Operation Cost와 Trns Cost는 1:1로 비교 가능한 동일 cost basis를 공유하지만, 절대 단위명은 따로 정의하지 않는다.",
     "customer는 분할 배정되지 않고 단일 warehouse에만 배정된다.",
-    "plant에서 warehouse로의 유입 총량은 warehouse가 담당하는 customer 수요 총량과 정확히 일치해야 하며, 재고/손실은 없다.",
+    "customer 수요는 항상 100% 충족되며, 추가 inbound는 warehouse inventory로 남을 수 있다.",
+    "warehouse inventory는 별도 의사결정변수로 저장하지 않고 inbound-outbound 파생값으로 해석된다.",
     "Plant가 여러 개인 경우 plant->warehouse 물량은 비용 최소화를 위해 여러 plant에서 정수 단위로 자유롭게 split될 수 있다.",
     "Shipment Qty는 정수 값으로 해석된다.",
     "Structure, Status, Distance Type은 현재 프로젝트의 최적화 모델과 후처리에서 사용되지 않는다.",
-    "customer.Mapping ID는 비즈니스 규칙상 customer를 특정 warehouse에 고정하고 해당 warehouse를 반드시 오픈시키는 장치로 해석되지만, 현재 코드에는 명시적으로 반영되어 있지 않다.",
-    "최적화 본체는 cost minimization만 수행하며 leadtime, coverage, ranking은 후처리 지표다."
+    "customer.Mapping ID는 비즈니스 규칙상 customer를 특정 warehouse에 고정하고 해당 warehouse를 반드시 오픈시키는 장치로 해석된다.",
+    "최적화 본체는 총 inbound 최대화 후 비용 최소화의 2단계 목적식을 사용하며 leadtime, coverage, ranking은 후처리 지표다."
   ],
   "unknowns": [
     "Mapping ID가 지정된 customer에 대해 warehouse-customer arc가 여러 개 존재할 때, 비지정 warehouse 쪽 비용 데이터는 보조 정보로 유지할지 제거할지에 대한 데이터 운영 원칙은 코드만으로 확정되지 않는다."

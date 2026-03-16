@@ -91,6 +91,7 @@ def main() -> None:
             "case_count": len(cases),
             "best_case": best_case.case_name,
             "best_total_cost": best_case.total_cost,
+            "best_total_inbound_qty": float(best_case.summary.iloc[0]["Optimal Total Inbound Qty"]),
             "required_warehouse_qty": data.simulation.warehouse_qty,
         }
         (run_dir / "run_summary.json").write_text(
