@@ -1,6 +1,6 @@
 # Network 3-Tier Optimizer
 
-Plant-Warehouse-Customer 3단 물류 네트워크에서 어떤 창고 후보를 열어야 총 inbound를 최대화하고, 그 해들 중 총비용이 최소가 되는지 계산하는 Python/OR-Tools 프로그램이다.
+Plant-Warehouse-Customer 3단 물류 네트워크에서 어떤 창고 후보를 열어야 총비용이 최소가 되는지 계산하는 Python/OR-Tools 프로그램이다.
 
 ## 문제 정의
 
@@ -13,11 +13,9 @@ Plant-Warehouse-Customer 3단 물류 네트워크에서 어떤 창고 후보를 
 현재 구현은 다음 제약을 만족한다.
 
 - 창고 `Capacity Qty`는 throughput capacity로 해석한다.
-- 창고별 `Inventory Capacity = Capacity Qty * 30%`를 사용한다.
 - 창고 outbound 물량은 해당 Warehouse가 담당하는 Customer 수요 합계다.
 - 창고 outbound 물량은 창고 inbound 물량을 초과할 수 없다.
-- 창고 inbound 물량은 창고 `Capacity Qty`를 초과할 수 없다.
-- 창고 `inbound - outbound`는 창고 `Inventory Capacity`를 초과할 수 없다.
+- 창고 outbound 물량은 창고 throughput capacity를 초과할 수 없다.
 - Plant 출하량은 Plant `Product Qty`를 초과할 수 없다.
 - 각 Customer는 정확히 하나의 Warehouse에만 연결된다.
 - `customer.Mapping ID`가 있으면 해당 Customer는 지정된 `Warehouse ID`로만 배정된다.
@@ -26,15 +24,15 @@ Plant-Warehouse-Customer 3단 물류 네트워크에서 어떤 창고 후보를 
 - `simulation.Warehouse Qty` 만큼의 warehouse를 정확히 사용한다.
 - 사용된 warehouse는 최소 1개 이상의 customer를 반드시 배정받는다.
 - Plant -> Warehouse 물량은 정수 단위로 여러 plant에 자유롭게 분할될 수 있다.
-- Plant -> Warehouse 변수는 의미상 `0 ~ min(plant Product Qty, warehouse Capacity Qty)` 범위의 정수다.
-- Warehouse 후보는 `warehouse.Active Y/N = Y` 인 행만 사용한다.
+- Plant -> Warehouse 변수는 의미상 `0 ~ plant Product Qty` 범위의 정수다.
+- Warehouse 후보는 `warehouse.Active Y/N'의 값이 'Y`이거나 'F'인 행만 사용한다.
+- Plant -> Warehouse 물량은 Plant Product Qty의 총 합이다.
 
 ## 비용 구조
 
-최적화는 2단계 목적식으로 동작한다.
+최적화는 아래 목적식으로 동작한다.
 
-1. 총 `Plant -> Warehouse` inbound 물량을 최대화한다.
-2. 1단계 최적 inbound를 유지하는 해들 중 총비용을 최소화한다.
+- 총 비용을 최소화한다.
 
 총비용은 아래 항목의 합으로 계산한다.
 
@@ -45,7 +43,6 @@ Plant-Warehouse-Customer 3단 물류 네트워크에서 어떤 창고 후보를 
 
 가정:
 
-- 비용 2차 목적식은 기존과 동일하게 `Do Qty`와 실제 inbound flow를 사용한다.
 - `Operation Cost`와 `Trns Cost`는 1:1로 비교 가능한 동일 cost basis를 사용한다.
 - `Shipment Qty`는 정수값이며 비용 목적식에 사용하지 않고 `leadtime` 계산에만 사용한다.
 - Plant 공급한도는 `Product Qty`를 사용한다.
@@ -116,7 +113,7 @@ Plant-Warehouse-Customer 3단 물류 네트워크에서 어떤 창고 후보를 
 
 ```bash
 pip3 install -r requirements.txt
-python3 network_optimizer.py --input TRNS_DOWNLOAD_20260311081304.xls --output-root output
+python network_optimizer.py --input TRNS_DOWNLOAD_20260311081304.xls
 ```
 
 옵션:
