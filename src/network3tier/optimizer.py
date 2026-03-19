@@ -32,7 +32,6 @@ def build_solver(
     data: NetworkData,
     solver_name: str,
     forced_open_warehouses: set[str] | None = None,
-    enable_inventory_capacity: bool = True,
 ):
     solver = pywraplp.Solver.CreateSolver(solver_name)
     if solver is None:
@@ -59,14 +58,13 @@ def build_solver(
     demand_by_customer = customers.set_index("Customer ID")["Do Qty"].to_dict()
     supply_by_plant = plants.set_index("Plant ID")["Product Qty"].to_dict()
     capacity_by_warehouse = warehouses.set_index("Warehouse ID")["Capacity Qty"].to_dict()
-    inventory_capacity_by_warehouse = {w: float(capacity) * 0.3 for w, capacity in capacity_by_warehouse.items()}
     fixed_cost_by_warehouse = warehouses.set_index("Warehouse ID")["Fixed Cost"].to_dict()
     op_cost_by_warehouse = warehouses.set_index("Warehouse ID")["Operation Cost"].to_dict()
     customer_mapping = get_customer_mapping_requirements(data)
     pw_cost = {(row["Plant ID"], row["Warehouse ID"]): float(row["Trns Cost"]) for _, row in pw.iterrows()}
     wc_cost = {(row["Warehouse ID"], row["Customer ID"]): float(row["Trns Cost"]) for _, row in wc.iterrows()}
 
-    total_demand = float(customers["Do Qty"].sum())
+    total_supply = float(plants["Product Qty"].sum())
     warehouse_ids = list(warehouses["Warehouse ID"])
     plant_ids = list(plants["Plant ID"])
     customer_ids = list(customers["Customer ID"])
@@ -87,7 +85,7 @@ def build_solver(
     f = {
         (p, w): solver.IntVar(
             0,
-            int(min(float(supply_by_plant[p]), float(capacity_by_warehouse[w]))),
+            int(float(supply_by_plant[p])),
             f"flow[{p},{w}]",
         )
         for (p, w) in pw_cost
@@ -118,9 +116,7 @@ def build_solver(
         inbound = sum(f[(p, w)] for (p, w2) in f if w2 == w)
         inbound_expr[w] = inbound
         solver.Add(outbound <= inbound)
-        solver.Add(inbound <= capacity_by_warehouse[w] * y[w])
-        if enable_inventory_capacity:
-            solver.Add(inbound - outbound <= inventory_capacity_by_warehouse[w] * y[w])
+        solver.Add(outbound <= capacity_by_warehouse[w] * y[w])
         solver.Add(customer_count_expr[w] >= y[w])
 
     for p in plant_ids:
@@ -140,19 +136,9 @@ def build_solver(
         if w in y:
             solver.Add(y[w] == 1)
 
-    total_inbound_expr = sum(f.values()) if f else 0
+    solver.Add((sum(f.values()) if f else 0) == total_supply)
 
     objective = solver.Objective()
-
-    def set_total_inbound_objective() -> None:
-        objective.Clear()
-        for var in y.values():
-            objective.SetCoefficient(var, 0.0)
-        for var in x.values():
-            objective.SetCoefficient(var, 0.0)
-        for var in f.values():
-            objective.SetCoefficient(var, 1.0)
-        objective.SetMaximization()
 
     def set_total_cost_objective() -> None:
         objective.Clear()
@@ -167,7 +153,7 @@ def build_solver(
             objective.SetCoefficient(var, float(pw_cost[(p, w)]))
         objective.SetMinimization()
 
-    set_total_inbound_objective()
+    set_total_cost_objective()
 
     return (
         solver,
@@ -179,9 +165,7 @@ def build_solver(
         pw_cost,
         wc_cost,
         capacity_by_warehouse,
-        inventory_capacity_by_warehouse,
-        total_inbound_expr,
-        set_total_cost_objective,
+        total_supply,
     )
 
 
@@ -191,7 +175,6 @@ def solve_case(
     case_name: str,
     case_type: str,
     forced_open_warehouses: set[str] | None = None,
-    enable_inventory_capacity: bool = True,
 ) -> CaseResult:
     LOGGER.info("Solving case '%s' (%s)", case_name, case_type)
     (
@@ -204,22 +187,15 @@ def solve_case(
         pw_cost,
         wc_cost,
         capacity_by_warehouse,
-        inventory_capacity_by_warehouse,
-        total_inbound_expr,
-        set_total_cost_objective,
-    ) = build_solver(data, solver_name, forced_open_warehouses, enable_inventory_capacity)
-
-    inbound_status = solver.Solve()
-    if inbound_status != pywraplp.Solver.OPTIMAL:
-        raise RuntimeError(f"Optimization failed for case '{case_name}' during inbound maximization. Solver status: {inbound_status}")
-
-    optimal_total_inbound = int(round(sum(var.solution_value() for var in f.values())))
-    solver.Add(total_inbound_expr >= optimal_total_inbound)
-    set_total_cost_objective()
+        total_supply,
+    ) = build_solver(data, solver_name, forced_open_warehouses)
 
     cost_status = solver.Solve()
     if cost_status != pywraplp.Solver.OPTIMAL:
-        raise RuntimeError(f"Optimization failed for case '{case_name}' during cost minimization. Solver status: {cost_status}")
+        raise RuntimeError(
+            f"Optimization failed for case '{case_name}' during cost minimization with total inbound fixed to "
+            f"total supply ({total_supply}). Solver status: {cost_status}"
+        )
 
     selected_warehouses = sorted([w for w, var in y.items() if var.solution_value() > 0.5])
     warehouse_lookup = data.warehouses.set_index("Warehouse ID")
@@ -325,18 +301,13 @@ def solve_case(
     for w in selected_warehouses:
         inbound_qty = inbound_qty_by_warehouse.get(w, 0.0)
         outbound_qty = outbound_qty_by_warehouse.get(w, 0.0)
-        inventory_qty = inbound_qty - outbound_qty
-        inventory_capacity = float(inventory_capacity_by_warehouse[w])
         warehouse_summary_rows.append(
             {
                 "Warehouse Id": w,
                 "Warehouse Location Name": warehouse_lookup.loc[w, "Location Name"],
                 "Inbound Qty": inbound_qty,
                 "Outbound Qty": outbound_qty,
-                "Inventory Qty": inventory_qty,
                 "Throughput Capacity Qty": float(capacity_by_warehouse[w]),
-                "Inventory Capacity Qty": inventory_capacity,
-                "Inventory Utilization (%)": (inventory_qty / inventory_capacity * 100.0) if inventory_capacity else 0.0,
                 "Fixed Cost": float(warehouse_lookup.loc[w, "Fixed Cost"]),
                 "Operation Cost": float(
                     sum(row["Operation Cost"] for row in warehouse_customer_rows if row["Warehouse Id"] == w)
@@ -347,8 +318,6 @@ def solve_case(
 
     total_inbound_qty = float(sum(inbound_qty_by_warehouse.values()))
     total_outbound_qty = float(sum(outbound_qty_by_warehouse.values()))
-    total_inventory_qty = total_inbound_qty - total_outbound_qty
-    total_inventory_capacity = float(sum(inventory_capacity_by_warehouse[w] for w in selected_warehouses))
     fixed_cost_total = float(
         data.warehouses[data.warehouses["Warehouse ID"].isin(selected_warehouses)]["Fixed Cost"].sum()
     )
@@ -372,11 +341,6 @@ def solve_case(
                 "Optimal Cost": float(solver.Objective().Value()),
                 "Optimal Total Inbound Qty": total_inbound_qty,
                 "Optimal Total Outbound Qty": total_outbound_qty,
-                "Optimal Total Inventory Qty": total_inventory_qty,
-                "Total Inventory Capacity Qty": total_inventory_capacity,
-                "Inventory Utilization (%)": (total_inventory_qty / total_inventory_capacity * 100.0)
-                if total_inventory_capacity
-                else 0.0,
                 "Inbound Cost": inbound_cost_total,
                 "Warehouse Cost": warehouse_cost_total,
                 "Outbound Cost": outbound_cost_total,

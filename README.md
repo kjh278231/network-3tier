@@ -46,7 +46,7 @@ Plant-Warehouse-Customer 3단 물류 네트워크에서 어떤 창고 후보를 
 - `Operation Cost`와 `Trns Cost`는 1:1로 비교 가능한 동일 cost basis를 사용한다.
 - `Shipment Qty`는 정수값이며 비용 목적식에 사용하지 않고 `leadtime` 계산에만 사용한다.
 - Plant 공급한도는 `Product Qty`를 사용한다.
-- Customer 수요는 항상 100% 충족한다. 추가 inbound는 inventory로만 남을 수 있다.
+- Customer 수요는 항상 100% 충족한다.
 - `Structure`, `Status`, `Distance Type`은 현재 프로젝트에서 사용하지 않는다.
 
 ## Leadtime / Coverage 계산
@@ -121,7 +121,6 @@ python network_optimizer.py --input TRNS_DOWNLOAD_20260311081304.xls
 - `--solver`: `SCIP` 또는 `CBC`
 - `--max-samples`: 샘플링할 지정 창고 케이스 수
 - `--random-seed`: 샘플링 시드
-- `--disable-inventory-capacity`: warehouse inventory capacity 제약 비활성화
 - `--log-level`: `DEBUG`, `INFO`, `ERROR`
 
 ## 산출물
@@ -141,8 +140,6 @@ python network_optimizer.py --input TRNS_DOWNLOAD_20260311081304.xls
 - `warehouse`
 - `warehouseCustomerRoute`
 - `coverageDetail`
-
-`warehouse` 시트와 `summary` 시트에는 inventory 관련 컬럼이 추가된다.
 
 ## 프로젝트 구조
 

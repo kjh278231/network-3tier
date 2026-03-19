@@ -79,7 +79,7 @@ def load_network_data(path: Path) -> NetworkData:
                 frame[column] = normalize_numeric(frame[column])
 
     warehouses["Active Y/N"] = warehouses["Active Y/N"].astype(str).str.strip().str.upper()
-    warehouses = warehouses[warehouses["Active Y/N"] == "Y"].reset_index(drop=True)
+    warehouses = warehouses[warehouses["Active Y/N"].isin(["Y", "F"])].reset_index(drop=True)
     if "Mapping ID" in customers.columns:
         customers["Mapping ID"] = normalize_mapping_id(customers["Mapping ID"])
 
