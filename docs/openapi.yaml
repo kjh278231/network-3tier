@@ -1,0 +1,1069 @@
+openapi: 3.1.0
+info:
+  title: Network 3-Tier Optimizer API
+  version: 0.1.0
+  description: |
+    Web API for uploading input workbooks, validating data, executing optimization,
+    and exploring network optimization results.
+
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+
+tags:
+  - name: Runs
+  - name: Input
+  - name: Validation
+  - name: Results
+  - name: Events
+
+paths:
+  /runs:
+    get:
+      tags: [Runs]
+      summary: List runs
+      operationId: listRuns
+      responses:
+        '200':
+          description: Runs retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [runs]
+                properties:
+                  runs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Run'
+
+  /runs/upload:
+    post:
+      tags: [Runs]
+      summary: Upload workbook and create run
+      operationId: uploadRun
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                solver:
+                  type: string
+                  enum: [SCIP, CBC]
+                  default: SCIP
+                maxSamples:
+                  type: integer
+                  default: 10
+                randomSeed:
+                  type: integer
+                  default: 42
+      responses:
+        '201':
+          description: Run created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [run]
+                properties:
+                  run:
+                    $ref: '#/components/schemas/Run'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /runs/{runId}:
+    get:
+      tags: [Runs]
+      summary: Get run metadata
+      operationId: getRun
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      responses:
+        '200':
+          description: Run retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [run, simulation]
+                properties:
+                  run:
+                    $ref: '#/components/schemas/Run'
+                  simulation:
+                    $ref: '#/components/schemas/SimulationConfig'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /runs/{runId}/validate:
+    post:
+      tags: [Validation]
+      summary: Validate uploaded workbook
+      operationId: validateRun
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      responses:
+        '200':
+          description: Validation completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationResult'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /runs/{runId}/execute:
+    post:
+      tags: [Runs]
+      summary: Execute optimization for run
+      operationId: executeRun
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      responses:
+        '202':
+          description: Execution started
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [runId, status, startedAt]
+                properties:
+                  runId:
+                    type: string
+                  status:
+                    $ref: '#/components/schemas/RunStatus'
+                  startedAt:
+                    type: string
+                    format: date-time
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /runs/{runId}/input/simulation:
+    get:
+      tags: [Input]
+      summary: Get simulation sheet rows
+      operationId: getSimulationInput
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      responses:
+        '200':
+          description: Simulation rows
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [rows]
+                properties:
+                  rows:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SimulationInputRow'
+
+  /runs/{runId}/input/plants:
+    get:
+      tags: [Input]
+      summary: Get plant sheet rows
+      operationId: getPlantInput
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      responses:
+        '200':
+          description: Plant rows
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlantInputResponse'
+
+  /runs/{runId}/input/warehouses:
+    get:
+      tags: [Input]
+      summary: Get warehouse sheet rows
+      operationId: getWarehouseInput
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      responses:
+        '200':
+          description: Warehouse rows
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WarehouseInputResponse'
+
+  /runs/{runId}/input/customers:
+    get:
+      tags: [Input]
+      summary: Get customer sheet rows
+      operationId: getCustomerInput
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      responses:
+        '200':
+          description: Customer rows
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerInputResponse'
+
+  /runs/{runId}/input/plant-warehouse-arcs:
+    get:
+      tags: [Input]
+      summary: Get plant to warehouse arc rows
+      operationId: getPlantWarehouseArcs
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      responses:
+        '200':
+          description: Plant-warehouse arcs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlantWarehouseArcResponse'
+
+  /runs/{runId}/input/warehouse-customer-arcs:
+    get:
+      tags: [Input]
+      summary: Get warehouse to customer arc rows
+      operationId: getWarehouseCustomerArcs
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      responses:
+        '200':
+          description: Warehouse-customer arcs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WarehouseCustomerArcResponse'
+
+  /runs/{runId}/validation-issues:
+    get:
+      tags: [Validation]
+      summary: Get validation issues
+      operationId: getValidationIssues
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      responses:
+        '200':
+          description: Validation issues
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationIssueResponse'
+
+  /runs/{runId}/summary:
+    get:
+      tags: [Results]
+      summary: Get case summary rows
+      operationId: getRunSummary
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      responses:
+        '200':
+          description: Summary rows
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [rows]
+                properties:
+                  rows:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CaseSummary'
+
+  /runs/{runId}/cases:
+    get:
+      tags: [Results]
+      summary: List cases for run
+      operationId: getCases
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      responses:
+        '200':
+          description: Case list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [cases]
+                properties:
+                  cases:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CaseListItem'
+
+  /runs/{runId}/cases/{caseName}/warehouse-summary:
+    get:
+      tags: [Results]
+      summary: Get warehouse summary rows for case
+      operationId: getWarehouseSummary
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+        - $ref: '#/components/parameters/CaseName'
+      responses:
+        '200':
+          description: Warehouse summary rows
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [rows]
+                properties:
+                  rows:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/WarehouseSummaryRow'
+
+  /runs/{runId}/cases/{caseName}/plant-warehouse-routes:
+    get:
+      tags: [Results]
+      summary: Get plant to warehouse routes for case
+      operationId: getPlantWarehouseRoutes
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+        - $ref: '#/components/parameters/CaseName'
+      responses:
+        '200':
+          description: Plant-warehouse route rows
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [rows]
+                properties:
+                  rows:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PlantWarehouseRouteRow'
+
+  /runs/{runId}/cases/{caseName}/warehouse-customer-routes:
+    get:
+      tags: [Results]
+      summary: Get warehouse to customer routes for case
+      operationId: getWarehouseCustomerRoutes
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+        - $ref: '#/components/parameters/CaseName'
+      responses:
+        '200':
+          description: Warehouse-customer route rows
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [rows]
+                properties:
+                  rows:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/WarehouseCustomerRouteRow'
+
+  /runs/{runId}/cases/{caseName}/coverage-details:
+    get:
+      tags: [Results]
+      summary: Get coverage detail rows for case
+      operationId: getCoverageDetails
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+        - $ref: '#/components/parameters/CaseName'
+      responses:
+        '200':
+          description: Coverage detail rows
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [rows]
+                properties:
+                  rows:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CoverageDetailRow'
+
+  /runs/{runId}/events:
+    get:
+      tags: [Events]
+      summary: Get run events/log timeline
+      operationId: getRunEvents
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      responses:
+        '200':
+          description: Run events
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [events]
+                properties:
+                  events:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RunEvent'
+
+components:
+  parameters:
+    RunId:
+      name: runId
+      in: path
+      required: true
+      schema:
+        type: string
+    CaseName:
+      name: caseName
+      in: path
+      required: true
+      schema:
+        type: string
+
+  responses:
+    ErrorResponse:
+      description: Error response
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+
+  schemas:
+    RunStatus:
+      type: string
+      enum:
+        - uploaded
+        - validating
+        - validation_failed
+        - ready
+        - running
+        - completed
+        - failed
+
+    Severity:
+      type: string
+      enum: [error, warning, info]
+
+    CaseType:
+      type: string
+      enum: [best, designated]
+
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: object
+              additionalProperties: true
+
+    Run:
+      type: object
+      required:
+        - runId
+        - status
+        - inputFileName
+        - createdAt
+        - updatedAt
+        - solver
+        - maxSamples
+        - randomSeed
+        - caseCount
+      properties:
+        runId:
+          type: string
+        status:
+          $ref: '#/components/schemas/RunStatus'
+        inputFileName:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        solver:
+          type: string
+          enum: [SCIP, CBC]
+        maxSamples:
+          type: integer
+        randomSeed:
+          type: integer
+        caseCount:
+          type: integer
+        bestCaseName:
+          type: [string, 'null']
+        bestTotalCost:
+          type: [number, 'null']
+        bestTotalInboundQty:
+          type: [number, 'null']
+        requiredWarehouseQty:
+          type: [integer, 'null']
+        errorSummary:
+          type: [string, 'null']
+
+    SimulationConfig:
+      type: object
+      required:
+        - simulationName
+        - structure
+        - warehouseQty
+        - speedKmh
+        - coverageHours
+      properties:
+        simulationName:
+          type: string
+        structure:
+          type: string
+        warehouseQty:
+          type: integer
+        speedKmh:
+          type: number
+        coverageHours:
+          type: number
+
+    AffectedRef:
+      type: object
+      required: [sheet, rowKey]
+      properties:
+        sheet:
+          type: string
+        rowKey:
+          type: string
+
+    ValidationIssue:
+      type: object
+      required:
+        - issueId
+        - severity
+        - ruleCode
+        - ruleName
+        - message
+        - affectedEntityType
+        - affectedCount
+        - affectedRefs
+        - blocking
+      properties:
+        issueId:
+          type: string
+        severity:
+          $ref: '#/components/schemas/Severity'
+        ruleCode:
+          type: string
+        ruleName:
+          type: string
+        message:
+          type: string
+        recommendation:
+          type: [string, 'null']
+        affectedEntityType:
+          type: string
+        affectedCount:
+          type: integer
+        affectedRefs:
+          type: array
+          items:
+            $ref: '#/components/schemas/AffectedRef'
+        blocking:
+          type: boolean
+
+    ValidationSummary:
+      type: object
+      required: [errorCount, warningCount, infoCount, blocking]
+      properties:
+        errorCount:
+          type: integer
+        warningCount:
+          type: integer
+        infoCount:
+          type: integer
+        blocking:
+          type: boolean
+
+    ValidationResult:
+      type: object
+      required: [runId, status, summary, issues]
+      properties:
+        runId:
+          type: string
+        status:
+          $ref: '#/components/schemas/RunStatus'
+        summary:
+          $ref: '#/components/schemas/ValidationSummary'
+        issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationIssue'
+
+    ValidationIssueResponse:
+      type: object
+      required: [summary, issues]
+      properties:
+        summary:
+          $ref: '#/components/schemas/ValidationSummary'
+        issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationIssue'
+
+    CaseSummary:
+      type: object
+      required:
+        - caseName
+        - caseType
+        - totalRank
+        - costRank
+        - optimalCost
+        - optimalTotalInboundQty
+        - optimalTotalOutboundQty
+        - inboundCost
+        - warehouseCost
+        - outboundCost
+        - leadTimeRank
+        - optimalLeadTimeSec
+        - inboundLeadTimeSec
+        - outboundLeadTimeSec
+        - coverageRankTime
+        - coverageTimePct
+        - coverageRankVol
+        - coverageVolPct
+        - costScore
+        - leadTimeScore
+        - coverageTimeScore
+        - coverageVolScore
+        - coverageScore
+        - totalScore
+        - selectedWarehouseCount
+        - selectedWarehouses
+        - carbonEmissionTco2eq
+      properties:
+        caseName:
+          type: string
+        caseType:
+          $ref: '#/components/schemas/CaseType'
+        totalRank:
+          type: integer
+        costRank:
+          type: integer
+        optimalCost:
+          type: number
+        optimalTotalInboundQty:
+          type: number
+        optimalTotalOutboundQty:
+          type: number
+        inboundCost:
+          type: number
+        warehouseCost:
+          type: number
+        outboundCost:
+          type: number
+        leadTimeRank:
+          type: integer
+        optimalLeadTimeSec:
+          type: number
+        inboundLeadTimeSec:
+          type: number
+        outboundLeadTimeSec:
+          type: number
+        coverageRankTime:
+          type: integer
+        coverageTimePct:
+          type: number
+        coverageRankVol:
+          type: integer
+        coverageVolPct:
+          type: number
+        costScore:
+          type: number
+        leadTimeScore:
+          type: number
+        coverageTimeScore:
+          type: number
+        coverageVolScore:
+          type: number
+        coverageScore:
+          type: number
+        totalScore:
+          type: number
+        selectedWarehouseCount:
+          type: integer
+        selectedWarehouses:
+          type: array
+          items:
+            type: string
+        carbonEmissionTco2eq:
+          type: number
+
+    CaseListItem:
+      type: object
+      required: [caseName, caseType, totalRank, optimalCost]
+      properties:
+        caseName:
+          type: string
+        caseType:
+          $ref: '#/components/schemas/CaseType'
+        totalRank:
+          type: integer
+        optimalCost:
+          type: number
+
+    WarehouseSummaryRow:
+      type: object
+      required:
+        - warehouseId
+        - warehouseLocationName
+        - inboundQty
+        - outboundQty
+        - throughputCapacityQty
+        - capacityUtilizationPct
+        - fixedCost
+        - operationCost
+        - assignedCustomerCount
+        - coveredCustomerPct
+        - coveredDoQtyPct
+      properties:
+        warehouseId:
+          type: string
+        warehouseLocationName:
+          type: string
+        inboundQty:
+          type: number
+        outboundQty:
+          type: number
+        throughputCapacityQty:
+          type: number
+        capacityUtilizationPct:
+          type: number
+        fixedCost:
+          type: number
+        operationCost:
+          type: number
+        assignedCustomerCount:
+          type: integer
+        coveredCustomerPct:
+          type: number
+        coveredDoQtyPct:
+          type: number
+
+    PlantWarehouseRouteRow:
+      type: object
+      required:
+        - plantId
+        - plantLocationName
+        - warehouseId
+        - warehouseLocationName
+        - doQty
+        - cost
+        - shipmentQtyRatio
+        - leadTimeSec
+        - distanceKm
+        - carbonEmissionTco2eq
+      properties:
+        plantId:
+          type: string
+        plantLocationName:
+          type: string
+        warehouseId:
+          type: string
+        warehouseLocationName:
+          type: string
+        doQty:
+          type: number
+        cost:
+          type: number
+        shipmentQtyRatio:
+          type: number
+        leadTimeSec:
+          type: number
+        distanceKm:
+          type: number
+        carbonEmissionTco2eq:
+          type: number
+
+    WarehouseCustomerRouteRow:
+      type: object
+      required:
+        - warehouseId
+        - warehouseLocationName
+        - customerId
+        - customerLocationName
+        - doQty
+        - cost
+        - shipmentQty
+        - leadTimeSec
+        - distanceKm
+        - oneWayTimeSec
+        - coverageYn
+        - operationCost
+        - carbonEmissionTco2eq
+      properties:
+        warehouseId:
+          type: string
+        warehouseLocationName:
+          type: string
+        customerId:
+          type: string
+        customerLocationName:
+          type: string
+        doQty:
+          type: number
+        cost:
+          type: number
+        shipmentQty:
+          type: number
+        leadTimeSec:
+          type: number
+        distanceKm:
+          type: number
+        oneWayTimeSec:
+          type: number
+        coverageYn:
+          type: string
+          enum: [Y, N]
+        operationCost:
+          type: number
+        carbonEmissionTco2eq:
+          type: number
+        mappingId:
+          type: [string, 'null']
+
+    CoverageDetailRow:
+      type: object
+      required:
+        - warehouseId
+        - customerId
+        - assignedDoQty
+        - customerShipmentQty
+        - plantWarehouseLeadTimeSec
+        - warehouseCustomerLeadTimeSec
+        - totalLeadTimeSec
+        - coverageHour
+        - oneWayTimeSec
+        - coverageYn
+      properties:
+        warehouseId:
+          type: string
+        customerId:
+          type: string
+        assignedDoQty:
+          type: number
+        customerShipmentQty:
+          type: number
+        plantWarehouseLeadTimeSec:
+          type: number
+        warehouseCustomerLeadTimeSec:
+          type: number
+        totalLeadTimeSec:
+          type: number
+        coverageHour:
+          type: number
+        oneWayTimeSec:
+          type: number
+        coverageYn:
+          type: string
+          enum: [Y, N]
+
+    SimulationInputRow:
+      type: object
+      required:
+        - simulationName
+        - status
+        - structure
+        - warehouseQty
+        - speedKmh
+        - coverageHours
+      properties:
+        simulationName:
+          type: string
+        status:
+          type: string
+        structure:
+          type: string
+        warehouseQty:
+          type: integer
+        speedKmh:
+          type: number
+        coverageHours:
+          type: number
+
+    PlantInputRow:
+      type: object
+      required:
+        - plantId
+        - locationName
+        - latitude
+        - longitude
+        - productQty
+        - shipmentQty
+      properties:
+        plantId:
+          type: string
+        locationName:
+          type: string
+        latitude:
+          type: number
+        longitude:
+          type: number
+        productQty:
+          type: number
+        shipmentQty:
+          type: number
+
+    WarehouseInputRow:
+      type: object
+      required:
+        - warehouseId
+        - locationName
+        - latitude
+        - longitude
+        - capacityQty
+        - fixedCost
+        - operationCost
+        - activeYn
+        - includedInModel
+      properties:
+        warehouseId:
+          type: string
+        locationName:
+          type: string
+        latitude:
+          type: number
+        longitude:
+          type: number
+        capacityQty:
+          type: number
+        fixedCost:
+          type: number
+        operationCost:
+          type: number
+        activeYn:
+          type: string
+        includedInModel:
+          type: boolean
+
+    CustomerInputRow:
+      type: object
+      required:
+        - customerId
+        - locationName
+        - latitude
+        - longitude
+        - doQty
+        - shipmentQty
+      properties:
+        customerId:
+          type: string
+        locationName:
+          type: string
+        latitude:
+          type: number
+        longitude:
+          type: number
+        doQty:
+          type: number
+        shipmentQty:
+          type: number
+        mappingId:
+          type: [string, 'null']
+
+    PlantWarehouseArcRow:
+      type: object
+      required:
+        - plantId
+        - warehouseId
+        - distanceKm
+        - trnsCost
+      properties:
+        plantId:
+          type: string
+        warehouseId:
+          type: string
+        distanceKm:
+          type: number
+        distanceType:
+          type: [string, 'null']
+        trnsCost:
+          type: number
+
+    WarehouseCustomerArcRow:
+      type: object
+      required:
+        - warehouseId
+        - customerId
+        - distanceKm
+        - trnsCost
+      properties:
+        warehouseId:
+          type: string
+        customerId:
+          type: string
+        distanceKm:
+          type: number
+        distanceType:
+          type: [string, 'null']
+        trnsCost:
+          type: number
+
+    PlantInputResponse:
+      type: object
+      required: [rows]
+      properties:
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlantInputRow'
+
+    WarehouseInputResponse:
+      type: object
+      required: [rows]
+      properties:
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/WarehouseInputRow'
+
+    CustomerInputResponse:
+      type: object
+      required: [rows]
+      properties:
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomerInputRow'
+
+    PlantWarehouseArcResponse:
+      type: object
+      required: [rows]
+      properties:
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlantWarehouseArcRow'
+
+    WarehouseCustomerArcResponse:
+      type: object
+      required: [rows]
+      properties:
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/WarehouseCustomerArcRow'
+
+    RunEvent:
+      type: object
+      required: [timestamp, level, message]
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        level:
+          type: string
+        message:
+          type: string

@@ -4,6 +4,12 @@ __pycache__/
 *.py[cod]
 
 output/
+web_runs/
+web_runs_test/
+
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
 
 TRNS_DOWNLOAD_*.xls
 TRNS_RESULT_DETAIL_*.xls
