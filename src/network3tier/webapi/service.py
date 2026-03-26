@@ -4,7 +4,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
-from ..loader import load_network_data, validate_network_data
+from ..loader import load_network_data, load_network_data_from_json, validate_network_data
 from ..logging_utils import get_logger
 from ..optimizer import solve_case
 from ..ranking import build_summary_workbook
@@ -158,9 +158,11 @@ class RunService:
         meta["errorSummary"] = None
         self._save_meta(run_id, meta)
         self.storage.append_event(run_id, "INFO", "Execution started")
-        input_file = self._input_file_for_run(run_id, meta)
+        input_payload_path = self.storage.input_path(run_id)
+        if not input_payload_path.exists():
+            raise RuntimeError(f"Run '{run_id}' does not have a validated input.json payload.")
         try:
-            data = load_network_data(input_file)
+            data = load_network_data_from_json(input_payload_path)
             validate_network_data(data)
             best_case = solve_case(data, meta["solver"], "best_model", "best")
             cases = [best_case]

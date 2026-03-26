@@ -9,6 +9,8 @@ from .loader import (
     DataValidationError,
     get_customer_mapping_requirements,
     load_network_data,
+    load_network_data_from_json,
+    load_network_data_from_payload,
     validate_network_data,
 )
 from .logging_utils import setup_logging
@@ -16,6 +18,7 @@ from .optimizer import solve_case
 from .output import write_case_output, write_xls_workbook
 from .ranking import build_summary_workbook
 from .sampling import sample_neighboring_warehouse_sets
+from .webapi.serializers import build_input_payload
 
 
 def parse_args() -> argparse.Namespace:
@@ -31,6 +34,20 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def prepare_network_data(input_path: Path, run_dir: Path):
+    if input_path.suffix.lower() == ".json":
+        data = load_network_data_from_json(input_path)
+        payload = json.loads(input_path.read_text(encoding="utf-8"))
+    else:
+        workbook_data = load_network_data(input_path)
+        validate_network_data(workbook_data)
+        payload = build_input_payload(workbook_data)
+        (run_dir / "input.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        data = load_network_data_from_payload(payload)
+    validate_network_data(data)
+    return data, payload
+
+
 def main() -> None:
     args = parse_args()
     run_dir = Path(args.output_root) / datetime.now().strftime("%Y%m%d%H%M%S")
@@ -39,8 +56,9 @@ def main() -> None:
     logger.info("Starting optimization workflow")
 
     try:
-        data = load_network_data(Path(args.input))
-        validate_network_data(data)
+        data, payload = prepare_network_data(Path(args.input), run_dir)
+        if not (run_dir / "input.json").exists():
+            (run_dir / "input.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         locked_warehouse_ids = set(get_customer_mapping_requirements(data).values())
 
         best_case = solve_case(

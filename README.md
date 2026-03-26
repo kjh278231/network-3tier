@@ -75,7 +75,7 @@ Plant-Warehouse-Customer 3단 물류 네트워크에서 어떤 창고 후보를 
 
 ## 입력 데이터 규칙
 
-워크북은 다음 시트를 사용한다.
+Excel 워크북은 다음 시트를 사용한다.
 
 - `simulation`
 - `plant`
@@ -114,6 +114,7 @@ Plant-Warehouse-Customer 3단 물류 네트워크에서 어떤 창고 후보를 
 ```bash
 pip3 install -r requirements.txt
 python network_optimizer.py --input TRNS_DOWNLOAD_20260311081304.xls
+python network_optimizer.py --input web_runs/run_20260319110000/input.json
 ```
 
 옵션:
@@ -122,6 +123,27 @@ python network_optimizer.py --input TRNS_DOWNLOAD_20260311081304.xls
 - `--max-samples`: 샘플링할 지정 창고 케이스 수
 - `--random-seed`: 샘플링 시드
 - `--log-level`: `DEBUG`, `INFO`, `ERROR`
+
+입력 규칙:
+
+- CLI는 Excel workbook 또는 내부 표준 `input.json`을 입력으로 받을 수 있다.
+- Excel 입력 시 먼저 내부 표준 `input.json`으로 정규화한 뒤, 해당 JSON을 다시 읽어 solver를 실행한다.
+- Web API의 `execute` 단계도 검증 시 저장된 `input.json`을 기준으로 실행한다.
+
+## 테스트
+
+테스트는 `solver`와 `web app`을 분리해서 실행한다.
+
+```bash
+python3 -m unittest discover -s tests/solver_e2e -p "test_*.py"
+python3 -m unittest discover -s tests/webapp_e2e -p "test_*.py"
+```
+
+구성 원칙:
+
+- `tests/solver_e2e`: CLI 기준 solver end-to-end 테스트
+- `tests/webapp_e2e`: `RunService` / `RunStorage` 기준 web app 백엔드 실행 라이프사이클 end-to-end 테스트
+- `tests/test_support.py`: 두 스위트가 공통으로 쓰는 테스트 입력 워크북 생성기
 
 ## 산출물
 

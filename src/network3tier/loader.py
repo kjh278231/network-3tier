@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -29,6 +30,19 @@ def load_sheet(path: Path, sheet_name: str) -> pd.DataFrame:
     return frame.dropna(how="all").reset_index(drop=True)
 
 
+def records_to_dataframe(
+    records: list[dict],
+    rename: dict[str, str] | None = None,
+    columns: list[str] | None = None,
+) -> pd.DataFrame:
+    frame = pd.DataFrame.from_records(records)
+    if rename:
+        frame = frame.rename(columns=rename)
+    if columns is not None:
+        frame = frame.reindex(columns=columns)
+    return frame
+
+
 def normalize_numeric(series: pd.Series) -> pd.Series:
     return pd.to_numeric(series.astype(str).str.replace(",", "", regex=False), errors="coerce")
 
@@ -55,6 +69,129 @@ def get_customer_mapping_requirements(data: NetworkData) -> dict[str, str]:
         for _, row in mapped.iterrows()
         if str(row["Mapping ID"]).strip()
     }
+
+
+def load_network_data_from_payload(payload: dict) -> NetworkData:
+    simulation_rows = payload.get("simulation", [])
+    if not simulation_rows:
+        raise DataValidationError("No simulation rows found.")
+
+    simulation_row = simulation_rows[0]
+    simulation = SimulationConfig(
+        simulation_name=str(simulation_row["simulationName"]),
+        structure=str(simulation_row["structure"]),
+        warehouse_qty=int(simulation_row["warehouseQty"]),
+        speed_kmh=float(simulation_row["speedKmh"]),
+        coverage_hours=float(simulation_row["coverageHours"]),
+    )
+
+    plants = records_to_dataframe(
+        payload.get("plants", []),
+        {
+            "plantId": "Plant ID",
+            "locationName": "Location Name",
+            "productQty": "Product Qty",
+            "shipmentQty": "Shipment Qty",
+            "latitude": "Latitude",
+            "longitude": "Longitude",
+        },
+        ["Plant ID", "Location Name", "Product Qty", "Shipment Qty", "Latitude", "Longitude"],
+    )
+    warehouses = records_to_dataframe(
+        payload.get("warehouses", []),
+        {
+            "warehouseId": "Warehouse ID",
+            "locationName": "Location Name",
+            "capacityQty": "Capacity Qty",
+            "fixedCost": "Fixed Cost",
+            "operationCost": "Operation Cost",
+            "latitude": "Latitude",
+            "longitude": "Longitude",
+            "activeYn": "Active Y/N",
+        },
+        [
+            "Warehouse ID",
+            "Location Name",
+            "Capacity Qty",
+            "Fixed Cost",
+            "Operation Cost",
+            "Latitude",
+            "Longitude",
+            "Active Y/N",
+        ],
+    )
+    customers = records_to_dataframe(
+        payload.get("customers", []),
+        {
+            "customerId": "Customer ID",
+            "locationName": "Location Name",
+            "doQty": "Do Qty",
+            "shipmentQty": "Shipment Qty",
+            "latitude": "Latitude",
+            "longitude": "Longitude",
+            "mappingId": "Mapping ID",
+        },
+        ["Customer ID", "Location Name", "Do Qty", "Shipment Qty", "Latitude", "Longitude", "Mapping ID"],
+    )
+    plant_warehouse_cost = records_to_dataframe(
+        payload.get("plantWarehouseArcs", []),
+        {
+            "plantId": "Plant ID",
+            "warehouseId": "Warehouse ID",
+            "distanceKm": "Distance (km)",
+            "distanceType": "Distance Type",
+            "trnsCost": "Trns Cost",
+        },
+        ["Plant ID", "Warehouse ID", "Distance (km)", "Distance Type", "Trns Cost"],
+    )
+    warehouse_customer_cost = records_to_dataframe(
+        payload.get("warehouseCustomerArcs", []),
+        {
+            "warehouseId": "Warehouse ID",
+            "customerId": "Customer ID",
+            "distanceKm": "Distance (km)",
+            "distanceType": "Distance Type",
+            "trnsCost": "Trns Cost",
+        },
+        ["Warehouse ID", "Customer ID", "Distance (km)", "Distance Type", "Trns Cost"],
+    )
+
+    for frame, numeric_columns in [
+        (plants, ["Product Qty", "Shipment Qty", "Latitude", "Longitude"]),
+        (warehouses, ["Capacity Qty", "Fixed Cost", "Operation Cost", "Latitude", "Longitude"]),
+        (customers, ["Do Qty", "Shipment Qty", "Latitude", "Longitude"]),
+        (plant_warehouse_cost, ["Distance (km)", "Trns Cost"]),
+        (warehouse_customer_cost, ["Distance (km)", "Trns Cost"]),
+    ]:
+        for column in numeric_columns:
+            if column in frame.columns:
+                frame[column] = normalize_numeric(frame[column])
+
+    if "Active Y/N" in warehouses.columns:
+        warehouses["Active Y/N"] = warehouses["Active Y/N"].astype(str).str.strip().str.upper()
+    if "Mapping ID" in customers.columns:
+        customers["Mapping ID"] = normalize_mapping_id(customers["Mapping ID"])
+
+    LOGGER.info(
+        "Loaded input payload with %d plant(s), %d warehouse(s), %d customer(s)",
+        len(plants),
+        len(warehouses),
+        len(customers),
+    )
+
+    return NetworkData(
+        simulation=simulation,
+        plants=plants,
+        warehouses=warehouses,
+        customers=customers,
+        plant_warehouse_cost=plant_warehouse_cost,
+        warehouse_customer_cost=warehouse_customer_cost,
+    )
+
+
+def load_network_data_from_json(path: Path) -> NetworkData:
+    LOGGER.info("Loading input payload json: %s", path)
+    return load_network_data_from_payload(json.loads(path.read_text(encoding="utf-8")))
 
 
 def load_network_data(path: Path) -> NetworkData:
