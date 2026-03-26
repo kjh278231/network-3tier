@@ -45,6 +45,8 @@ class WebAppRunServiceE2ETest(unittest.TestCase):
         self.assertEqual(run_snapshot["run"]["status"], "ready")
         self.assertEqual(run_snapshot["simulation"]["warehouseQty"], 2)
         input_json_path = self.storage.input_path(run_id)
+        input_payload = self.storage.load_json(input_json_path)
+        self.assertEqual(input_payload["warehouses"][0]["defaultInventoryQty"], 0)
         json_case = solve_case(load_network_data_from_json(input_json_path), "CBC", "best_model", "best")
         self.assertEqual(baseline_case.selected_warehouses, json_case.selected_warehouses)
         self.assertEqual(baseline_case.total_cost, json_case.total_cost)
@@ -96,11 +98,33 @@ class WebAppRunServiceE2ETest(unittest.TestCase):
 
         saved_validation = self.service.get_validation(run_id)
         self.assertTrue(saved_validation["summary"]["blocking"])
-        self.assertIn("exceeds plant Product Qty", saved_validation["issues"][0]["message"])
+        self.assertIn("exceeds plant Product Qty + warehouse Default Inventory Qty", saved_validation["issues"][0]["message"])
 
         run_snapshot = self.service.get_run(run_id)
         self.assertEqual(run_snapshot["run"]["status"], "validation_failed")
-        self.assertIn("exceeds plant Product Qty", run_snapshot["run"]["errorSummary"])
+        self.assertIn("exceeds plant Product Qty + warehouse Default Inventory Qty", run_snapshot["run"]["errorSummary"])
+
+    def test_run_service_accepts_inventory_that_covers_supply_gap(self) -> None:
+        workbook = build_workbook(self.temp_root / "inventory.xlsx", scenario="inventory_covers_supply_gap")
+        meta = self.service.create_run(
+            source_file=workbook,
+            original_name="inventory.xlsx",
+            solver="CBC",
+            max_samples=1,
+            random_seed=11,
+        )
+        run_id = meta["runId"]
+
+        validation = self.service.validate_run(run_id)
+        self.assertEqual(validation["status"], "ready")
+        self.assertFalse(validation["summary"]["blocking"])
+
+        payload = self.storage.load_json(self.storage.input_path(run_id))
+        self.assertEqual(payload["warehouses"][0]["defaultInventoryQty"], 20)
+
+        case = solve_case(load_network_data_from_json(self.storage.input_path(run_id)), "CBC", "best_model", "best")
+        self.assertEqual(float(case.summary.iloc[0]["Optimal Total Inbound Qty"]), 80.0)
+        self.assertEqual(float(case.summary.iloc[0]["Optimal Total Outbound Qty"]), 100.0)
 
 
 if __name__ == "__main__":

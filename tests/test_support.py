@@ -32,6 +32,7 @@ def build_workbook(path: Path, scenario: str = "valid") -> Path:
         "Warehouse ID",
         "Location Name",
         "Capacity Qty",
+        "Default Inventory Qty",
         "Fixed Cost",
         "Operation Cost",
         "Latitude",
@@ -51,12 +52,16 @@ def build_workbook(path: Path, scenario: str = "valid") -> Path:
     wc_headers = ["Warehouse ID", "Customer ID", "Distance (km)", "Distance Type", "Trns Cost"]
 
     plant_qty = 100
+    default_inventory_rows = [0, 0, 0]
     customer_rows = [
         ["C1", "Customer 1", 50, 1, 37.1, 127.1, None],
         ["C2", "Customer 2", 50, 1, 37.2, 127.2, None],
     ]
     if scenario == "demand_exceeds_supply":
         plant_qty = 80
+    if scenario == "inventory_covers_supply_gap":
+        plant_qty = 80
+        default_inventory_rows = [20, 0, 0]
 
     _write_sheet(
         workbook,
@@ -75,9 +80,9 @@ def build_workbook(path: Path, scenario: str = "valid") -> Path:
         "warehouse",
         warehouse_headers,
         [
-            ["W1", "Warehouse 1", 100, 10, 1, 37.31, 127.31, "Y"],
-            ["W2", "Warehouse 2", 100, 10, 1, 37.32, 127.32, "Y"],
-            ["W3", "Warehouse 3", 100, 100, 5, 37.33, 127.33, "Y"],
+            ["W1", "Warehouse 1", 100, default_inventory_rows[0], 10, 1, 37.31, 127.31, "Y"],
+            ["W2", "Warehouse 2", 100, default_inventory_rows[1], 10, 1, 37.32, 127.32, "Y"],
+            ["W3", "Warehouse 3", 100, default_inventory_rows[2], 100, 5, 37.33, 127.33, "Y"],
         ],
     )
     _write_sheet(workbook, "customer", customer_headers, customer_rows)

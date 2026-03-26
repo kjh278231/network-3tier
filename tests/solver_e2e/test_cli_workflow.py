@@ -33,6 +33,18 @@ class SolverCliE2ETest(unittest.TestCase):
                 float(json_case.summary.iloc[0]["Optimal Total Inbound Qty"]),
             )
 
+    def test_default_inventory_allows_demand_to_exceed_plant_supply(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            workbook_path = build_workbook(temp_root / "inventory.xlsx", scenario="inventory_covers_supply_gap")
+
+            case = solve_case(load_network_data(workbook_path), "CBC", "best_model", "best")
+
+            self.assertEqual(case.selected_warehouses, ["W1", "W2"])
+            self.assertEqual(case.total_cost, 300.0)
+            self.assertEqual(float(case.summary.iloc[0]["Optimal Total Inbound Qty"]), 80.0)
+            self.assertEqual(float(case.summary.iloc[0]["Optimal Total Outbound Qty"]), 100.0)
+
     def test_cli_happy_path_writes_ranked_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_root = Path(temp_dir)
@@ -100,7 +112,10 @@ class SolverCliE2ETest(unittest.TestCase):
             run_dirs = sorted(path for path in output_root.iterdir() if path.is_dir())
             self.assertEqual(len(run_dirs), 1)
             error_text = (run_dirs[0] / "error.txt").read_text(encoding="utf-8")
-            self.assertIn("Total Do Qty (100.0) exceeds plant Product Qty (80.0).", error_text)
+            self.assertIn(
+                "Total Do Qty (100.0) exceeds plant Product Qty + warehouse Default Inventory Qty (80.0).",
+                error_text,
+            )
 
 
 if __name__ == "__main__":

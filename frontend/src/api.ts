@@ -51,6 +51,7 @@ export type WarehouseInputRow = {
   latitude: number;
   longitude: number;
   capacityQty: number;
+  defaultInventoryQty: number;
   fixedCost: number;
   operationCost: number;
   activeYn: string;

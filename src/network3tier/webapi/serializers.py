@@ -213,6 +213,7 @@ def build_input_payload(data: NetworkData) -> dict:
                 "Latitude": "latitude",
                 "Longitude": "longitude",
                 "Capacity Qty": "capacityQty",
+                "Default Inventory Qty": "defaultInventoryQty",
                 "Fixed Cost": "fixedCost",
                 "Operation Cost": "operationCost",
                 "Active Y/N": "activeYn",

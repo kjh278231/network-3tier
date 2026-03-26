@@ -13,8 +13,9 @@ Plant-Warehouse-Customer 3단 물류 네트워크에서 어떤 창고 후보를 
 현재 구현은 다음 제약을 만족한다.
 
 - 창고 `Capacity Qty`는 throughput capacity로 해석한다.
+- 창고 `Default Inventory Qty`는 warehouse 초기 가용 재고로 해석한다.
 - 창고 outbound 물량은 해당 Warehouse가 담당하는 Customer 수요 합계다.
-- 창고 outbound 물량은 창고 inbound 물량을 초과할 수 없다.
+- 창고 outbound 물량은 창고 `inbound + Default Inventory Qty`를 초과할 수 없다.
 - 창고 outbound 물량은 창고 throughput capacity를 초과할 수 없다.
 - Plant 출하량은 Plant `Product Qty`를 초과할 수 없다.
 - 각 Customer는 정확히 하나의 Warehouse에만 연결된다.
@@ -27,6 +28,9 @@ Plant-Warehouse-Customer 3단 물류 네트워크에서 어떤 창고 후보를 
 - Plant -> Warehouse 변수는 의미상 `0 ~ plant Product Qty` 범위의 정수다.
 - Warehouse 후보는 `warehouse.Active Y/N'의 값이 'Y`이거나 'F'인 행만 사용한다.
 - Plant -> Warehouse 물량은 Plant Product Qty의 총 합이다.
+- Plant 공급은 전량 사용되며, customer 출고에 사용되지 않은 inbound는 warehouse 기말재고로 남을 수 있다.
+- `Default Inventory Qty` 역시 일부 또는 전부가 사용되지 않고 기말재고로 남을 수 있다.
+- 현재 모델은 기말재고에 대한 별도 비용이나 패널티를 두지 않는다.
 
 ## 비용 구조
 
@@ -44,6 +48,7 @@ Plant-Warehouse-Customer 3단 물류 네트워크에서 어떤 창고 후보를 
 가정:
 
 - `Operation Cost`와 `Trns Cost`는 1:1로 비교 가능한 동일 cost basis를 사용한다.
+- `Default Inventory Qty`에서 출고된 물량도 일반 outbound와 동일하게 `Operation Cost`를 적용한다.
 - `Shipment Qty`는 정수값이며 비용 목적식에 사용하지 않고 `leadtime` 계산에만 사용한다.
 - Plant 공급한도는 `Product Qty`를 사용한다.
 - Customer 수요는 항상 100% 충족한다.
@@ -95,6 +100,12 @@ Excel 워크북은 다음 시트를 사용한다.
 - `Product Qty`, `Do Qty`, `Capacity Qty`, `Shipment Qty`가 정수값인지
 - `Mapping ID`가 active warehouse를 가리키는지
 - `Mapping ID`가 지정한 `(warehouse, customer)` 쌍이 `warehouseCustomerCost`에 존재하는지
+
+warehouse 입력 컬럼 의미:
+
+- `Capacity Qty`: warehouse throughput capacity
+- `Default Inventory Qty`: warehouse 초기 가용 재고
+- `Operation Cost`: customer outbound 물량 기준 운영비
 
 ## Total Rank
 

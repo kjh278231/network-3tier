@@ -924,6 +924,7 @@ components:
         - latitude
         - longitude
         - capacityQty
+        - defaultInventoryQty
         - fixedCost
         - operationCost
         - activeYn
@@ -938,6 +939,8 @@ components:
         longitude:
           type: number
         capacityQty:
+          type: number
+        defaultInventoryQty:
           type: number
         fixedCost:
           type: number

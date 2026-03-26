@@ -40,7 +40,7 @@ def build_solver(
 
     plants = data.plants[["Plant ID", "Product Qty", "Shipment Qty", "Location Name"]].copy()
     warehouses = data.warehouses[
-        ["Warehouse ID", "Capacity Qty", "Fixed Cost", "Operation Cost", "Location Name"]
+        ["Warehouse ID", "Capacity Qty", "Default Inventory Qty", "Fixed Cost", "Operation Cost", "Location Name"]
     ].copy()
     customers = data.customers[["Customer ID", "Do Qty", "Shipment Qty", "Location Name"]].copy()
 
@@ -58,6 +58,9 @@ def build_solver(
     demand_by_customer = customers.set_index("Customer ID")["Do Qty"].to_dict()
     supply_by_plant = plants.set_index("Plant ID")["Product Qty"].to_dict()
     capacity_by_warehouse = warehouses.set_index("Warehouse ID")["Capacity Qty"].to_dict()
+    default_inventory_by_warehouse = (
+        warehouses.set_index("Warehouse ID")["Default Inventory Qty"].fillna(0).to_dict()
+    )
     fixed_cost_by_warehouse = warehouses.set_index("Warehouse ID")["Fixed Cost"].to_dict()
     op_cost_by_warehouse = warehouses.set_index("Warehouse ID")["Operation Cost"].to_dict()
     customer_mapping = get_customer_mapping_requirements(data)
@@ -115,7 +118,7 @@ def build_solver(
         customer_count_expr[w] = sum(assigned_count) if assigned_count else 0
         inbound = sum(f[(p, w)] for (p, w2) in f if w2 == w)
         inbound_expr[w] = inbound
-        solver.Add(outbound <= inbound)
+        solver.Add(outbound <= inbound + float(default_inventory_by_warehouse[w]))
         solver.Add(outbound <= capacity_by_warehouse[w] * y[w])
         solver.Add(customer_count_expr[w] >= y[w])
 

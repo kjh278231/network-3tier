@@ -103,6 +103,7 @@ def load_network_data_from_payload(payload: dict) -> NetworkData:
             "warehouseId": "Warehouse ID",
             "locationName": "Location Name",
             "capacityQty": "Capacity Qty",
+            "defaultInventoryQty": "Default Inventory Qty",
             "fixedCost": "Fixed Cost",
             "operationCost": "Operation Cost",
             "latitude": "Latitude",
@@ -113,6 +114,7 @@ def load_network_data_from_payload(payload: dict) -> NetworkData:
             "Warehouse ID",
             "Location Name",
             "Capacity Qty",
+            "Default Inventory Qty",
             "Fixed Cost",
             "Operation Cost",
             "Latitude",
@@ -158,7 +160,10 @@ def load_network_data_from_payload(payload: dict) -> NetworkData:
 
     for frame, numeric_columns in [
         (plants, ["Product Qty", "Shipment Qty", "Latitude", "Longitude"]),
-        (warehouses, ["Capacity Qty", "Fixed Cost", "Operation Cost", "Latitude", "Longitude"]),
+        (
+            warehouses,
+            ["Capacity Qty", "Default Inventory Qty", "Fixed Cost", "Operation Cost", "Latitude", "Longitude"],
+        ),
         (customers, ["Do Qty", "Shipment Qty", "Latitude", "Longitude"]),
         (plant_warehouse_cost, ["Distance (km)", "Trns Cost"]),
         (warehouse_customer_cost, ["Distance (km)", "Trns Cost"]),
@@ -206,7 +211,10 @@ def load_network_data(path: Path) -> NetworkData:
     for frame, numeric_columns in [
         (simulation_df, ["Warehouse Qty", "Speed (km/h)", "Coverage (hour)"]),
         (plants, ["Product Qty", "Shipment Qty", "Latitude", "Longitude"]),
-        (warehouses, ["Capacity Qty", "Fixed Cost", "Operation Cost", "Latitude", "Longitude"]),
+        (
+            warehouses,
+            ["Capacity Qty", "Default Inventory Qty", "Fixed Cost", "Operation Cost", "Latitude", "Longitude"],
+        ),
         (customers, ["Do Qty", "Shipment Qty", "Latitude", "Longitude"]),
         (plant_warehouse_cost, ["Distance (km)", "Trns Cost"]),
         (warehouse_customer_cost, ["Distance (km)", "Trns Cost"]),
@@ -255,6 +263,11 @@ def validate_network_data(data: NetworkData) -> None:
     total_demand = float(data.customers["Do Qty"].sum())
     total_throughput_capacity = float(data.warehouses["Capacity Qty"].sum())
     total_supply = float(data.plants["Product Qty"].sum())
+    total_default_inventory = (
+        float(data.warehouses["Default Inventory Qty"].fillna(0).sum())
+        if "Default Inventory Qty" in data.warehouses.columns
+        else 0.0
+    )
     customer_mapping = get_customer_mapping_requirements(data)
 
     if data.plants.empty:
@@ -271,9 +284,11 @@ def validate_network_data(data: NetworkData) -> None:
         errors.append(
             f"Total Do Qty ({total_demand}) exceeds total active warehouse throughput capacity ({total_throughput_capacity})."
         )
-    if total_demand > total_supply:
+    if total_demand > total_supply + total_default_inventory:
         errors.append(
-            f"Total Do Qty ({total_demand}) exceeds plant Product Qty ({total_supply})."
+            "Total Do Qty "
+            f"({total_demand}) exceeds plant Product Qty + warehouse Default Inventory Qty "
+            f"({total_supply + total_default_inventory})."
         )
     if data.simulation.warehouse_qty < len(set(customer_mapping.values())):
         errors.append(
@@ -286,6 +301,7 @@ def validate_network_data(data: NetworkData) -> None:
         ("plant.Product Qty", data.plants["Product Qty"]),
         ("plant.Shipment Qty", data.plants["Shipment Qty"]),
         ("warehouse.Capacity Qty", data.warehouses["Capacity Qty"]),
+        ("warehouse.Default Inventory Qty", data.warehouses["Default Inventory Qty"]),
         ("customer.Do Qty", data.customers["Do Qty"]),
         ("customer.Shipment Qty", data.customers["Shipment Qty"]),
     ]
