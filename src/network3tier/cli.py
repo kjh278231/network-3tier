@@ -1,10 +1,8 @@
 from __future__ import annotations
-
 import argparse
 import json
 from datetime import datetime
 from pathlib import Path
-
 from .loader import (
     DataValidationError,
     get_customer_mapping_requirements,
@@ -13,18 +11,19 @@ from .loader import (
 )
 from .logging_utils import setup_logging
 from .optimizer import solve_case
+from .custom_solver import solve_case_cpp
 from .output import write_case_output, write_xls_workbook
 from .ranking import build_summary_workbook
 from .sampling import sample_neighboring_warehouse_sets
 
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Optimize a plant-warehouse-customer network with OR-Tools."
+        description="Optimize a plant-warehouse-customer network with OR-Tools or Custom C++ Solver."
     )
     parser.add_argument("--input", default="TRNS_DOWNLOAD_20260311081304.xls")
     parser.add_argument("--output-root", default="output")
     parser.add_argument("--solver", default="SCIP", choices=["SCIP", "CBC"])
+    parser.add_argument("--custom-solver", action="store_true", help="Use the custom C++ LNS solver instead of OR-Tools.")
     parser.add_argument("--max-samples", type=int, default=10)
     parser.add_argument("--random-seed", type=int, default=42)
     parser.add_argument(
@@ -35,29 +34,33 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "ERROR"])
     return parser.parse_args()
 
-
 def main() -> None:
     args = parse_args()
     run_dir = Path(args.output_root) / datetime.now().strftime("%Y%m%d%H%M%S")
     logger = setup_logging(run_dir, args.log_level)
     logger.info("Run directory: %s", run_dir)
     logger.info("Starting optimization workflow")
+    logger.info("Using custom C++ solver: %s", args.custom_solver)
     logger.info("Inventory capacity constraint enabled: %s", not args.disable_inventory_capacity)
-
+    
     try:
         data = load_network_data(Path(args.input))
         validate_network_data(data)
         locked_warehouse_ids = set(get_customer_mapping_requirements(data).values())
-
-        best_case = solve_case(
+        
+        # Select solver function
+        solver_fn = solve_case_cpp if args.custom_solver else solve_case
+        
+        best_case = solver_fn(
             data,
-            args.solver,
+            args.solver if not args.custom_solver else "LNS",
             "best_model",
             "best",
             enable_inventory_capacity=not args.disable_inventory_capacity,
         )
+        
         cases = [best_case]
-
+        
         sampled_sets = sample_neighboring_warehouse_sets(
             active_warehouse_ids=data.warehouses["Warehouse ID"].tolist(),
             base_set=set(best_case.selected_warehouses),
@@ -65,16 +68,16 @@ def main() -> None:
             max_samples=max(args.max_samples * 10, args.max_samples),
             random_seed=args.random_seed,
         )
-
+        
         sampled_success_count = 0
         for idx, warehouse_set in enumerate(sampled_sets, start=1):
             if sampled_success_count >= args.max_samples:
                 break
             case_name = f"sampled_case_{idx}"
             try:
-                case_result = solve_case(
+                case_result = solver_fn(
                     data,
-                    args.solver,
+                    args.solver if not args.custom_solver else "LNS",
                     case_name,
                     "designated",
                     forced_open_warehouses=warehouse_set,
@@ -85,20 +88,20 @@ def main() -> None:
                 continue
             cases.append(case_result)
             sampled_success_count += 1
-
+            
         summary_df = build_summary_workbook(cases)
         summary_lookup = summary_df.set_index("Case Name")
         for case in cases:
             case.summary = summary_lookup.loc[[case.case_name]].reset_index()
-
+            
         for idx, case in enumerate(cases, start=1):
             path = write_case_output(run_dir, idx, case)
             logger.info("Saved case workbook: %s", path)
-
+            
         summary_path = run_dir / "output_summary.xls"
         write_xls_workbook(summary_path, {"summary": summary_df})
         logger.info("Saved summary workbook: %s", summary_path)
-
+        
         summary_json = {
             "run_dir": str(run_dir),
             "case_count": len(cases),
@@ -107,6 +110,7 @@ def main() -> None:
             "best_total_inbound_qty": float(best_case.summary.iloc[0]["Optimal Total Inbound Qty"]),
             "inventory_capacity_constraint_enabled": not args.disable_inventory_capacity,
             "required_warehouse_qty": data.simulation.warehouse_qty,
+            "solver_used": "Custom C++ LNS" if args.custom_solver else args.solver,
         }
         (run_dir / "run_summary.json").write_text(
             json.dumps(summary_json, ensure_ascii=False, indent=2),
@@ -114,6 +118,7 @@ def main() -> None:
         )
         logger.info("Workflow completed successfully")
         print(json.dumps(summary_json, ensure_ascii=False))
+        
     except Exception as exc:
         logger.error("Workflow failed: %s", exc)
         (run_dir / "error.txt").write_text(str(exc), encoding="utf-8")

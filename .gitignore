@@ -10,3 +10,14 @@ TRNS_RESULT_DETAIL_*.xls
 
 zNex~$*
 ~$*.xls
+
+# C++ build artifacts
+cpp/build/
+*.o
+*.a
+*.so
+*.pyc
+__pycache__/
+*.egg-info/
+build/
+dist/
