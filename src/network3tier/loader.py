@@ -57,6 +57,13 @@ def is_integral_series(series: pd.Series) -> bool:
     return bool(((numeric.dropna() % 1) == 0).all())
 
 
+def ensure_default_inventory_column(warehouses: pd.DataFrame) -> pd.DataFrame:
+    if "Default Inventory Qty" not in warehouses.columns:
+        warehouses = warehouses.copy()
+        warehouses["Default Inventory Qty"] = 0
+    return warehouses
+
+
 def get_customer_mapping_requirements(data: NetworkData) -> dict[str, str]:
     if "Mapping ID" not in data.customers.columns:
         return {}
@@ -158,6 +165,8 @@ def load_network_data_from_payload(payload: dict) -> NetworkData:
         ["Warehouse ID", "Customer ID", "Distance (km)", "Distance Type", "Trns Cost"],
     )
 
+    warehouses = ensure_default_inventory_column(warehouses)
+
     for frame, numeric_columns in [
         (plants, ["Product Qty", "Shipment Qty", "Latitude", "Longitude"]),
         (
@@ -207,6 +216,8 @@ def load_network_data(path: Path) -> NetworkData:
     customers = load_sheet(path, "customer")
     plant_warehouse_cost = load_sheet(path, "plantWarehouseCost")
     warehouse_customer_cost = load_sheet(path, "warehouseCustomerCost")
+
+    warehouses = ensure_default_inventory_column(warehouses)
 
     for frame, numeric_columns in [
         (simulation_df, ["Warehouse Qty", "Speed (km/h)", "Coverage (hour)"]),

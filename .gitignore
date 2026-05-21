@@ -16,3 +16,6 @@ TRNS_RESULT_DETAIL_*.xls
 
 zNex~$*
 ~$*.xls
+
+analysis_agent/.env
+analysis_agent/report_*.md
