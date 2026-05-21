@@ -19,3 +19,6 @@ zNex~$*
 
 analysis_agent/.env
 analysis_agent/report_*.md
+
+infeasibility_agent/.env
+infeasibility_agent/diagnosis_*.md

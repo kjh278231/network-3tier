@@ -19,10 +19,16 @@ src/network3tier/             ← 솔버 코어
       ├── service.py          ← 비즈니스 로직
       ├── serializers.py      ← DataFrame ↔ JSON 변환
       └── storage.py          ← 파일 시스템 추상화
-analysis_agent/               ← AI 분석 에이전트
+analysis_agent/               ← AI 분석 에이전트 (솔버 성공 시)
   ├── main.py                 ← 에이전트 CLI 진입점
   ├── data_loader.py          ← 솔버 결과 로딩 & 정규화
   ├── tools.py                ← LangChain 분석 툴 10종
+  ├── agent.py                ← LangGraph ReAct 에이전트
+  └── prompt.py               ← LLM 시스템 프롬프트
+infeasibility_agent/          ← AI 불가능성 진단 에이전트 (솔버 실패 시)
+  ├── main.py                 ← 진단 에이전트 CLI 진입점
+  ├── data_loader.py          ← 실패 런 input.json 로딩
+  ├── tools.py                ← LangChain 진단·실험 툴 10종
   ├── agent.py                ← LangGraph ReAct 에이전트
   └── prompt.py               ← LLM 시스템 프롬프트
 ```
@@ -95,7 +101,18 @@ OR-Tools CP-SAT/SCIP로 시설 입지·할당·흐름을 동시에 최적화한�
 | 함수 | 설명 |
 |------|------|
 | `solve_case(data, solver_name, case_name, case_type, forced_open_warehouses)` | MILP 풀고 CaseResult 반환 |
+| `build_and_solve(data, solver_name, overrides)` | `SolveOverrides` 적용 후 MILP 실행, `(is_feasible: bool, status: str)` 반환 — 불가능성 진단용 |
 | `configure_solver_threads()` | 가용 CPU 코어 수만큼 스레드 자동 설정 |
+
+**`SolveOverrides` 데이터클래스** — `build_and_solve`에 전달해 NetworkData 복사본을 수정:
+
+| 필드 | 효과 |
+|------|------|
+| `remove_capacity_upper_bound` | 모든 창고 용량을 총 수요 이상으로 설정 (용량 제약 무력화) |
+| `supply_multiplier` | 공장 공급량에 배수 적용 (예: 1e6으로 공급 무제한 모사) |
+| `remove_mapping_constraints` | `Mapping ID` 컬럼을 NA로 대체해 강제 배정 제거 |
+| `warehouse_qty_override` | `simulation.warehouse_qty` 덮어쓰기 |
+| `exclude_warehouse_ids` | 지정 창고를 데이터에서 제거 + `warehouse_qty` 자동 감소 |
 
 지원 솔버: **SCIP** (기본, 성능 우수), **CBC** (대안).
 
@@ -324,6 +341,51 @@ python main.py ../output/<YYYYMMDDHHMMSS>
 
 ---
 
+## AI 불가능성 진단 에이전트 (`infeasibility_agent/`)
+
+솔버가 INFEASIBLE을 반환한 런의 `input.json`을 읽어 원인을 체계적으로 진단한다. `analysis_agent/`와 동일한 LangGraph ReAct 구조를 사용하며, 솔버 결과 대신 원시 입력 데이터를 분석 대상으로 삼는다.
+
+### data_loader.py — 실패 런 로딩
+
+`load_failed_run(run_dir) → FailedRunData`
+
+| 필드 | 내용 |
+|------|------|
+| `network_data` | `load_network_data_from_payload()`로 로드한 `NetworkData` |
+| `error_message` | `meta.json["errorSummary"]` 또는 `error.txt` |
+| `solver` | 실패한 런에서 사용한 솔버 이름 (기본: SCIP) |
+
+### tools.py — 진단·실험 툴 10종
+
+`make_tools(run_data)` 클로저로 생성. 1–5번은 재최적화 없이 입력 데이터만 분석하고, 6–10번은 `build_and_solve()`를 호출해 제약을 하나씩 완화하며 실험한다.
+
+| 번호 | 툴 이름 | 설명 |
+|------|---------|------|
+| 1 | `check_aggregate_balance` | 총 공급·수요·용량 집계 및 부족분 |
+| 2 | `check_customer_arc_eligibility` | 배정 가능한 창고 아크가 없는 고객 탐지 |
+| 3 | `check_mapping_constraints` | Mapping ID 고객의 창고 존재·아크 유효성 |
+| 4 | `check_mapped_warehouse_capacity` | 강제 배정 창고별 매핑 수요 합산 vs 용량 |
+| 5 | `check_warehouse_count_feasibility` | `warehouse_qty` vs 활성 창고 수 vs 매핑 최소 수 |
+| 6 | `experiment_relax_capacity` | 용량 제약 제거 후 재최적화 |
+| 7 | `experiment_relax_supply` | 공급량 1e6배 후 재최적화 |
+| 8 | `experiment_remove_mapping` | Mapping ID 제약 전체 제거 후 재최적화 |
+| 9 | `experiment_warehouse_count_sweep` | `warehouse_qty` 1..N 순차 스윕, 최소 가능 수 탐색 |
+| 10 | `experiment_per_warehouse_exclusion` | 강제 창고 하나씩 제외하며 재최적화 |
+
+### agent.py / prompt.py
+
+`run_diagnosis(run_data: FailedRunData) -> str` — `recursion_limit=60`. 프롬프트는 10단계 순서 호출과 9개 섹션 한국어 보고서를 지정한다.
+
+### main.py — 진단 에이전트 CLI 진입점
+
+```bash
+cd infeasibility_agent
+python main.py ../web_runs/<run_id> [--output report.md]
+# → infeasibility_agent/diagnosis_<timestamp>.md 생성
+```
+
+---
+
 ## 전체 데이터 플로우
 
 ### CLI 솔버 경로
@@ -365,6 +427,22 @@ analysis_agent/main.py
         └── create_react_agent → ReAct 루프(최대 50회)
             [툴 호출 → JSON 결과 → 분석 → 반복]
             └── 한국어 마크다운 보고서 → report_<timestamp>.md
+```
+
+### AI 불가능성 진단 에이전트 경로
+
+```
+infeasibility_agent/main.py
+└── data_loader.load_failed_run(run_dir)  # input.json 로드
+    └── agent.run_diagnosis(run_data)
+        ├── tools.make_tools(run_data) → 10개 진단·실험 툴
+        │   ├── 진단 툴(1-5): 입력 데이터 분석만 수행
+        │   └── 실험 툴(6-10): optimizer.build_and_solve() 호출
+        │       └── _apply_overrides(data, SolveOverrides) → 복사본 수정
+        ├── ChatLiteLLM("claude-sonnet-4-6")
+        └── create_react_agent → ReAct 루프(최대 60회)
+            [툴 호출 → JSON 결과 → 분석 → 반복]
+            └── 한국어 진단 보고서 → diagnosis_<timestamp>.md
 ```
 
 ---

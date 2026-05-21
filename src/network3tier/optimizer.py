@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import dataclasses
 import math
 import os
+from dataclasses import dataclass, field
 
 import pandas as pd
 from ortools.linear_solver import pywraplp
@@ -386,3 +388,71 @@ def solve_case(
         coverage_detail=coverage_detail_df,
         summary=summary_df,
     )
+
+
+@dataclass
+class SolveOverrides:
+    remove_capacity_upper_bound: bool = False
+    supply_multiplier: float | None = None
+    remove_mapping_constraints: bool = False
+    warehouse_qty_override: int | None = None
+    exclude_warehouse_ids: set[str] | None = field(default=None)
+
+
+def _apply_overrides(data: NetworkData, overrides: SolveOverrides) -> NetworkData:
+    plants = data.plants.copy()
+    warehouses = data.warehouses.copy()
+    customers = data.customers.copy()
+    pw = data.plant_warehouse_cost.copy()
+    wc = data.warehouse_customer_cost.copy()
+    sim = data.simulation
+
+    if overrides.supply_multiplier is not None:
+        plants["Product Qty"] = (plants["Product Qty"].astype(float) * overrides.supply_multiplier).astype(int)
+
+    if overrides.remove_capacity_upper_bound:
+        total_demand = int(customers["Do Qty"].sum()) + 1
+        warehouses["Capacity Qty"] = total_demand
+
+    if overrides.remove_mapping_constraints and "Mapping ID" in customers.columns:
+        customers = customers.copy()
+        customers["Mapping ID"] = pd.NA
+
+    if overrides.warehouse_qty_override is not None:
+        sim = dataclasses.replace(sim, warehouse_qty=overrides.warehouse_qty_override)
+
+    if overrides.exclude_warehouse_ids:
+        exclude = overrides.exclude_warehouse_ids
+        warehouses = warehouses[~warehouses["Warehouse ID"].isin(exclude)].reset_index(drop=True)
+        pw = pw[~pw["Warehouse ID"].isin(exclude)].reset_index(drop=True)
+        wc = wc[~wc["Warehouse ID"].isin(exclude)].reset_index(drop=True)
+        new_qty = max(0, sim.warehouse_qty - len(exclude))
+        sim = dataclasses.replace(sim, warehouse_qty=new_qty)
+
+    return NetworkData(
+        simulation=sim,
+        plants=plants,
+        warehouses=warehouses,
+        customers=customers,
+        plant_warehouse_cost=pw,
+        warehouse_customer_cost=wc,
+    )
+
+
+def build_and_solve(
+    data: NetworkData,
+    solver_name: str = "SCIP",
+    overrides: SolveOverrides | None = None,
+) -> tuple[bool, str]:
+    """Run MILP with optional overrides applied to a copy of data. Returns (is_feasible, status_description)."""
+    modified = _apply_overrides(data, overrides or SolveOverrides())
+    try:
+        solver, *_ = build_solver(modified, solver_name)
+    except (DataValidationError, RuntimeError) as exc:
+        return False, f"pre_solve_error: {exc}"
+    status = solver.Solve()
+    if status == pywraplp.Solver.OPTIMAL:
+        return True, "OPTIMAL"
+    if status == pywraplp.Solver.FEASIBLE:
+        return True, "FEASIBLE"
+    return False, f"status_code={status}"
